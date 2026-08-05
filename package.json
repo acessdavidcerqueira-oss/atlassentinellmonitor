@@ -1,0 +1,49 @@
+{
+  "name": "atlas-sentinel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ATLAS SENTINEL - Executive CTI & Digital Threat Intelligence MVP",
+  "scripts": {
+    "dev": "PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false next dev --webpack",
+    "build": "PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false next build --webpack",
+    "start": "PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false next start",
+    "lint": "PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "typecheck": "PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false tsc --noEmit",
+    "test": "PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false vitest run",
+    "seed": "tsx src/services/seed-local.ts",
+    "collect": "tsx collector/commands/collect.ts"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.7.1",
+    "@radix-ui/react-slot": "1.3.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.28.0",
+    "next": "16.3.0",
+    "papaparse": "5.5.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "7.84.0",
+    "tailwind-merge": "3.6.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.3.6",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.1.2",
+    "@types/papaparse": "5.5.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "autoprefixer": "10.5.4",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.0",
+    "postcss": "8.5.25",
+    "prettier": "3.9.6",
+    "tailwindcss": "3.4.19",
+    "tsx": "4.23.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.66.0",
+    "vitest": "4.1.10"
+  }
+}
