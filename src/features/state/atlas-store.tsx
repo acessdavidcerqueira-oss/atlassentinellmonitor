@@ -265,9 +265,21 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
 }
 
 function normalizeState(state: AtlasState): AtlasState {
+  const fallback = buildDemoState();
   return {
-    ...state,
-    blacklist: state.blacklist ?? []
+    ...fallback,
+    ...(state && typeof state === "object" ? state : {}),
+    monitoredEntities: Array.isArray(state?.monitoredEntities) ? state.monitoredEntities : fallback.monitoredEntities,
+    incidents: Array.isArray(state?.incidents) ? state.incidents : [],
+    evidences: Array.isArray(state?.evidences) ? state.evidences : [],
+    actors: Array.isArray(state?.actors) ? state.actors : [],
+    narratives: Array.isArray(state?.narratives) ? state.narratives : [],
+    indicators: Array.isArray(state?.indicators) ? state.indicators : [],
+    alerts: Array.isArray(state?.alerts) ? state.alerts : [],
+    tasks: Array.isArray(state?.tasks) ? state.tasks : [],
+    blacklist: Array.isArray(state?.blacklist) ? state.blacklist : [],
+    auditLogs: Array.isArray(state?.auditLogs) ? state.auditLogs : [],
+    imports: Array.isArray(state?.imports) ? state.imports : []
   };
 }
 
@@ -300,6 +312,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    const currentUser = user;
     const userId = user.id;
     setLoading(true);
     setSyncError("");
@@ -312,7 +325,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const remoteState = await loadAtlasStateFromSupabase(userId);
+        const remoteState = await loadAtlasStateFromSupabase(currentUser);
         const localState = loadLocalStorageStateForMigration();
         const shouldMigrateLocal =
           localState &&
@@ -401,6 +414,8 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
 function clearLegacyLocalStorage() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(storageKey);
+  window.localStorage.removeItem("atlas-sentinel-user-v1");
+  window.localStorage.removeItem("atlas-sentinel-users-v1");
   legacyStorageKeys.forEach((key) => window.localStorage.removeItem(key));
 }
 

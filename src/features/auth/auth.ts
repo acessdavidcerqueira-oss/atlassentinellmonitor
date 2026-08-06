@@ -16,8 +16,13 @@ export function canManageUsers(user: DemoUser | null | undefined): boolean {
   return Boolean(user && (user.role === "Admin" || user.role === "Super Admin"));
 }
 
-export function normalizeAccessRole(role: string | undefined): AccessRole {
-  if (role === "Super Admin") return "Super Admin";
-  if (role === "Viewer") return "Viewer";
+export function normalizeAccessRole(role: string | null | undefined): AccessRole {
+  const normalized = String(role ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ");
+
+  if (normalized === "super admin" || normalized === "superadmin") return "Super Admin";
+  if (normalized === "viewer" || normalized === "viewver") return "Viewer";
   return "Admin";
 }

@@ -14,6 +14,7 @@ import type {
   MonitoredEntity,
   Narrative
 } from "@/types/domain";
+import type { DemoUser } from "@/features/auth/auth";
 import { buildDemoState } from "@/services/demo-data";
 
 const tables = [
@@ -39,7 +40,7 @@ export function getSupabaseClientOrThrow(): SupabaseClient {
   return supabase;
 }
 
-export async function loadAtlasStateFromSupabase(userId: string): Promise<AtlasState> {
+export async function loadAtlasStateFromSupabase(user: DemoUser): Promise<AtlasState> {
   const supabase = getSupabaseClientOrThrow();
   const [
     monitoredEntities,
@@ -52,15 +53,15 @@ export async function loadAtlasStateFromSupabase(userId: string): Promise<AtlasS
     auditLogs,
     blacklist
   ] = await Promise.all([
-    loadPayloads<MonitoredEntity>(supabase, "monitored_entities", userId),
-    loadPayloads<Incident>(supabase, "incidents", userId),
-    loadPayloads<Evidence>(supabase, "evidences", userId),
-    loadPayloads<Actor>(supabase, "actors", userId),
-    loadPayloads<Narrative>(supabase, "narratives", userId),
-    loadPayloads<Alert>(supabase, "alerts", userId),
-    loadPayloads<ImportReport>(supabase, "imports", userId),
-    loadPayloads<AuditLog>(supabase, "audit_logs", userId),
-    loadPayloads<BlacklistEntry>(supabase, "blacklist_entries", userId)
+    loadPayloads<MonitoredEntity>(supabase, "monitored_entities", user),
+    loadPayloads<Incident>(supabase, "incidents", user),
+    loadPayloads<Evidence>(supabase, "evidences", user),
+    loadPayloads<Actor>(supabase, "actors", user),
+    loadPayloads<Narrative>(supabase, "narratives", user),
+    loadPayloads<Alert>(supabase, "alerts", user),
+    loadPayloads<ImportReport>(supabase, "imports", user),
+    loadPayloads<AuditLog>(supabase, "audit_logs", user),
+    loadPayloads<BlacklistEntry>(supabase, "blacklist_entries", user)
   ]);
 
   const fallback = buildDemoState();
@@ -101,21 +102,33 @@ export async function replaceAtlasStateInSupabase(userId: string, state: AtlasSt
   await insertRows(supabase, "blacklist_entries", state.blacklist.map((entry) => blacklistRow(userId, entry)));
 }
 
-async function loadPayloads<T>(supabase: SupabaseClient, table: PersistableTable, userId: string): Promise<T[]> {
-  const { data, error } = await supabase
+async function loadPayloads<T extends { id: string }>(
+  supabase: SupabaseClient,
+  table: PersistableTable,
+  user: DemoUser
+): Promise<T[]> {
+  let query = supabase
     .from(table)
     .select("payload, created_at")
-    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
+  if (user.role !== "Super Admin") {
+    query = query.eq("user_id", user.id);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []).map((row) => row.payload as T).filter(Boolean);
+  return (data ?? []).map((row) => row.payload).filter(hasClientId) as T[];
 }
 
 async function insertRows(supabase: SupabaseClient, table: PersistableTable, rows: Record<string, unknown>[]) {
   if (!rows.length) return;
   const { error } = await supabase.from(table).insert(rows);
   if (error) throw error;
+}
+
+function hasClientId(payload: unknown): payload is { id: string } {
+  return Boolean(payload && typeof payload === "object" && typeof (payload as { id?: unknown }).id === "string");
 }
 
 function monitoredEntityRow(userId: string, entity: MonitoredEntity) {

@@ -47,25 +47,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return false;
         }
 
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim().toLowerCase(),
-          password
-        });
+        setLoading(true);
 
-        if (error || !data.user) {
-          setError("Credenciais inválidas ou usuário não cadastrado no Supabase.");
-          return false;
-        }
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password
+          });
 
-        const profile = await loadUserProfile(data.user.id);
-        if (!profile) {
-          await supabase.auth.signOut();
-          setError("Usuário autenticado, mas sem perfil em public.users.");
+          if (error || !data.user) {
+            setError("Credenciais inválidas ou usuário não cadastrado no Supabase.");
+            return false;
+          }
+
+          const profile = await loadUserProfile(data.user.id);
+          if (!profile) {
+            await supabase.auth.signOut();
+            setError("Usuário autenticado, mas sem perfil em public.users.");
+            return false;
+          }
+          setUser(profile);
+          await loadUsers(profile);
+          return true;
+        } catch (error) {
+          setError(error instanceof Error ? error.message : "Falha ao autenticar no Supabase.");
           return false;
+        } finally {
+          setLoading(false);
         }
-        setUser(profile);
-        await loadUsers(profile);
-        return true;
       },
       async logout() {
         const supabase = createBrowserSupabaseClient();
@@ -137,33 +146,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadSession() {
     setLoading(true);
     setError("");
-    const supabase = createBrowserSupabaseClient();
-    if (!supabase || !isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserSupabaseClient();
+      if (!supabase || !isSupabaseConfigured()) {
+        setUser(null);
+        setUsers([]);
+        return;
+      }
+
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        setUser(null);
+        setUsers([]);
+        return;
+      }
+
+      const profile = await loadUserProfile(data.user.id);
+      if (!profile) {
+        await supabase.auth.signOut();
+        setError("Sessão encontrada, mas sem perfil em public.users.");
+        setUser(null);
+        setUsers([]);
+        return;
+      }
+      setUser(profile);
+      await loadUsers(profile);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível carregar a sessão.");
       setUser(null);
       setUsers([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-
-    const profile = await loadUserProfile(data.user.id);
-    if (!profile) {
-      await supabase.auth.signOut();
-      setError("Sessão encontrada, mas sem perfil em public.users.");
-      setUser(null);
-      setUsers([]);
-      setLoading(false);
-      return;
-    }
-    setUser(profile);
-    await loadUsers(profile);
-    setLoading(false);
   }
 
   async function loadUsers(currentUser: DemoUser) {
@@ -177,8 +191,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsers(
       data.map((row) => ({
         id: row.auth_user_id ?? currentUser.id,
-        name: row.name ?? nameFromEmail(row.email),
-        email: row.email,
+        name: safeText(row.name, nameFromEmail(row.email)),
+        email: safeText(row.email, currentUser.email),
         role: normalizeAccessRole(row.role),
         team: row.team ?? (normalizeAccessRole(row.role) === "Viewer" ? "Visualização" : "Operação")
       }))
@@ -194,8 +208,8 @@ export function useAuth() {
   return context;
 }
 
-function nameFromEmail(email: string): string {
-  return email
+function nameFromEmail(email: unknown): string {
+  return String(email ?? "")
     .split("@")[0]
     .split(/[._-]/)
     .filter(Boolean)
@@ -214,13 +228,19 @@ async function loadUserProfile(authUserId: string): Promise<DemoUser | null> {
     .maybeSingle();
 
   if (data) {
+    const email = safeText(data.email, "");
     return {
-      id: data.auth_user_id ?? authUserId,
-      name: data.name ?? nameFromEmail(data.email),
-      email: data.email,
+      id: safeText(data.auth_user_id, authUserId),
+      name: safeText(data.name, nameFromEmail(email)),
+      email,
       role: normalizeAccessRole(data.role),
       team: data.team ?? (normalizeAccessRole(data.role) === "Viewer" ? "Visualização" : "Operação")
     };
   }
   return null;
+}
+
+function safeText(value: unknown, fallback: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || fallback;
 }

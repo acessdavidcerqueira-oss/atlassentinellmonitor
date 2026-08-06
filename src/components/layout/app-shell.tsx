@@ -10,7 +10,7 @@ import { useAuth } from "@/features/state/auth-store";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, error } = useAuth();
   const isLogin = pathname === "/login";
 
   useEffect(() => {
@@ -29,6 +29,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-atlas-muted">Carregando sessão...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 text-center text-atlas-muted">
+        <div className="max-w-md rounded-md border border-atlas-border bg-atlas-panel p-6">
+          <p className="font-medium text-atlas-text">Sessão não encontrada</p>
+          <p className="mt-2 text-sm leading-6">
+            {error || "Você será redirecionado para o login."}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
