@@ -10,6 +10,7 @@ export async function middleware(request: NextRequest) {
       headers: request.headers
     }
   });
+  applyNoStoreHeaders(response);
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return response;
@@ -39,17 +40,27 @@ export async function middleware(request: NextRequest) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    const redirect = NextResponse.redirect(loginUrl);
+    applyNoStoreHeaders(redirect);
+    return redirect;
   }
 
   if (user && isPublicRoute) {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";
     homeUrl.search = "";
-    return NextResponse.redirect(homeUrl);
+    const redirect = NextResponse.redirect(homeUrl);
+    applyNoStoreHeaders(redirect);
+    return redirect;
   }
 
   return response;
+}
+
+function applyNoStoreHeaders(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
 }
 
 export const config = {
