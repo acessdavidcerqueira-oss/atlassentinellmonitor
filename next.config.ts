@@ -1,10 +1,8 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig & { agentRules?: false } = {
+const nextConfig: NextConfig = {
   poweredByHeader: false,
-  reactStrictMode: true,
-  agentRules: false,
-  typedRoutes: false
+  reactStrictMode: true
 };
 
 export default nextConfig;

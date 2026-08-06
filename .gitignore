@@ -11,5 +11,6 @@ outputs
 work
 *.log
 *.tsbuildinfo
+tsconfig.tsbuildinfo
 public/uploads/*
 !public/uploads/.gitkeep

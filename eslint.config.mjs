@@ -1,12 +1,28 @@
+import { FlatCompat } from "@eslint/eslintrc";
 import js from "@eslint/js";
-import tseslint from "typescript-eslint";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export default [
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+  allConfig: js.configs.all
+});
+
+const config = [
   {
     ignores: [".next/**", "node_modules/**", "coverage/**", "exports/**", "work/**"]
   },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    files: ["next-env.d.ts"],
+    rules: {
+      "@typescript-eslint/triple-slash-reference": "off"
+    }
+  },
   {
     files: ["**/*.{ts,tsx}"],
     rules: {
@@ -23,3 +39,5 @@ export default [
     }
   }
 ];
+
+export default config;

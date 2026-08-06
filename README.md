@@ -19,6 +19,7 @@ MVP funcional em Next.js App Router, React, TypeScript estrito e Tailwind. A apl
 ## Instalação
 
 ```bash
+corepack enable
 pnpm install
 cp .env.example .env.local
 pnpm dev
@@ -45,6 +46,26 @@ pnpm typecheck
 pnpm seed
 pnpm collect -- --monitorado "Flávio Bolsonaro" --from "2026-08-01" --to "2026-08-05" --output "./exports/flavio_bolsonaro_cti.csv"
 ```
+
+## DEPLOY NA HOSTINGER
+
+Use estas configurações no painel de deploy gerenciado da Hostinger:
+
+- Framework: Next.js
+- Branch: main
+- Node.js: 22.x
+- Root directory: ./
+- Install command: pnpm install
+- Build command: pnpm build
+- Start command: pnpm start
+
+Se a Hostinger mostrar `/bin/sh: pnpm: command not found`, altere apenas o Install command para:
+
+```bash
+corepack enable && pnpm install
+```
+
+O projeto está preparado para rodar sem variáveis de ambiente obrigatórias no modo local de demonstração. As chaves em `.env.example` são opcionais para integrações futuras.
 
 ## Supabase
 

@@ -360,7 +360,6 @@ export function SimpleReportForm() {
                     type="button"
                     role="radio"
                     aria-checked={selected}
-                    aria-pressed={selected}
                     className={cn(
                       "min-h-24 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action",
                       selected
@@ -408,7 +407,6 @@ export function SimpleReportForm() {
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        aria-pressed={selected}
                         className={cn(
                           "min-h-24 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action",
                           selected
@@ -474,7 +472,6 @@ export function SimpleReportForm() {
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        aria-pressed={selected}
                         className={cn(
                           "min-h-24 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action",
                           selected
@@ -511,7 +508,6 @@ export function SimpleReportForm() {
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        aria-pressed={selected}
                         className={cn(
                           "min-h-24 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action",
                           selected
@@ -579,7 +575,6 @@ export function SimpleReportForm() {
                       type="button"
                       role="radio"
                       aria-checked={selected}
-                      aria-pressed={selected}
                       className={cn(
                         "min-h-28 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action",
                         selected
@@ -614,7 +609,6 @@ export function SimpleReportForm() {
                       type="button"
                       role="radio"
                       aria-checked={selected}
-                      aria-pressed={selected}
                       className={cn(
                         "min-h-24 rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action",
                         selected
