@@ -13,16 +13,16 @@ import { useAuth } from "@/features/state/auth-store";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, demoUsers } = useAuth();
+  const { login, demoUsers, loading, error: authError } = useAuth();
   const [email, setEmail] = useState("admin@atlas.local");
   const [password, setPassword] = useState("atlas-demo");
   const [error, setError] = useState("");
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const ok = login(email, password);
+    const ok = await login(email, password);
     if (!ok) {
-      setError("Credenciais inválidas para o ambiente de demonstração.");
+      setError(authError || "Credenciais inválidas para o Supabase.");
       return;
     }
     router.replace("/");
@@ -84,8 +84,8 @@ export default function LoginPage() {
                 />
               </div>
               {error ? <p className="text-sm text-red-200">{error}</p> : null}
-              <Button className="w-full" type="submit">
-                Entrar
+              <Button className="w-full" type="submit" disabled={loading}>
+                {loading ? "Entrando..." : "Entrar"}
               </Button>
             </form>
 

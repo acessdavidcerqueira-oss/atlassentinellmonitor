@@ -2,11 +2,11 @@
 
 Executive CTI & Digital Threat Intelligence.
 
-MVP funcional em Next.js App Router, React, TypeScript estrito e Tailwind. A aplicação inicia com base limpa e passa a mostrar apenas reports cadastrados, importados ou coletados.
+MVP funcional em Next.js App Router, React, TypeScript estrito, Tailwind e Supabase. A aplicação inicia com base limpa e passa a mostrar apenas reports cadastrados, importados ou coletados pelo usuário autenticado.
 
 ## Escopo do MVP
 
-- Login local de demonstração.
+- Login real com Supabase Auth.
 - Command Center com métricas, gráficos, atalhos de report por tema e prioridades.
 - Report rápido com página/perfil/link, fake news, o que disseram, observação e alcance estimado.
 - Tabela simplificada de reports com exportação CSV/JSON.
@@ -27,13 +27,15 @@ pnpm dev
 
 Abra `http://localhost:3000`.
 
-Contas de demonstração:
+Crie os usuários no Supabase Auth antes do primeiro acesso ou use a aba Configurações com um usuário Admin já autenticado.
+
+Contas sugeridas para desenvolvimento:
 
 - `admin@atlas.local`
 - `cti@atlas.local`
 - `viewer@atlas.local`
 
-Senha: `atlas-demo`
+Senha sugerida para desenvolvimento: `atlas-demo`
 
 ## Scripts
 
@@ -65,16 +67,21 @@ Se a Hostinger mostrar `/bin/sh: pnpm: command not found`, altere apenas o Insta
 corepack enable && pnpm install
 ```
 
-O projeto está preparado para rodar sem variáveis de ambiente obrigatórias no modo local de demonstração. As chaves em `.env.example` são opcionais para integrações futuras.
+Configure as variáveis do Supabase no painel da Hostinger antes do redeploy:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 ## Supabase
 
 1. Crie um projeto Supabase.
-2. Aplique `supabase/migrations/001_initial_schema.sql`.
-3. Rode `supabase/seed.sql` se quiser dados mínimos no banco.
-4. Configure `.env.local` com `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Aplique as migrations em `supabase/migrations/` na ordem dos arquivos.
+3. Ative Email/Password em Authentication > Providers.
+4. Crie o primeiro usuário em Authentication > Users.
+5. Insira ou atualize a linha correspondente em `public.users` com `auth_user_id`, `email`, `name`, `role` e `team`.
+6. Configure `.env.local` com `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
-O frontend atual usa estado local para o MVP. A camada `src/lib/supabase.ts` e o schema SQL estão prontos para persistência real.
+Os dados operacionais são salvos no Supabase com `user_id` e Row Level Security. O `localStorage` fica limitado a rascunhos temporários e migração única de dados antigos.
 
 ## Arquivos importantes
 
@@ -89,8 +96,8 @@ O frontend atual usa estado local para o MVP. A camada `src/lib/supabase.ts` e o
 
 ## Limitações atuais
 
-- Persistência principal está em `localStorage` para permitir MVP local sem credenciais.
-- Supabase está preparado com migrations/RLS, mas a UI ainda não grava no banco.
+- Persistência principal está no Supabase.
+- A migração de dados antigos do navegador ocorre uma única vez após login, quando a conta ainda não tem dados no servidor.
 - Alertas por e-mail/webhook estão preparados, porém não enviam mensagens reais sem configuração e implementação do provedor.
 - O coletor de busca genérica permanece desativado até existir chave, endpoint e revisão dos termos do provedor.
 - Upload privado de evidências ainda não usa storage assinado real.

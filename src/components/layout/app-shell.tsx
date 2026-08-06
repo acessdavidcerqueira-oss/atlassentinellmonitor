@@ -10,20 +10,25 @@ import { useAuth } from "@/features/state/auth-store";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const isLogin = pathname === "/login";
 
   useEffect(() => {
+    if (loading) return;
     if (!user && !isLogin) {
       router.replace("/login");
     }
     if (user && isLogin) {
       router.replace("/");
     }
-  }, [isLogin, router, user]);
+  }, [isLogin, loading, router, user]);
 
   if (isLogin) {
     return <>{children}</>;
+  }
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-atlas-muted">Carregando sessão...</div>;
   }
 
   return (

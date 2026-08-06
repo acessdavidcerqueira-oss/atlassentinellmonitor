@@ -1,8 +1,3 @@
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-export function isSupabaseConfigured(): boolean {
-  return Boolean(supabaseUrl && supabaseAnonKey);
-}
-
-export const supabase = null;
+export { isSupabaseConfigured } from "@/lib/supabase/config";
+export { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+export { createServerSupabaseClient } from "@/lib/supabase/server";

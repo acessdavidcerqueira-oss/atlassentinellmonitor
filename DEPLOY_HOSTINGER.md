@@ -32,15 +32,41 @@ corepack enable && pnpm install
 
 ## 3. Variáveis de ambiente
 
-O projeto funciona sem variáveis obrigatórias no modo local atual.
+O projeto precisa das variáveis públicas do Supabase para autenticar e persistir dados.
 
-Na Hostinger, você pode deixar as variáveis vazias para o MVP de demonstração.
+Na Hostinger, cadastre:
 
-Se quiser cadastrar mesmo assim, use como referência o arquivo:
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
+
+Use como referência o arquivo:
 
 ```text
 .env.example
 ```
+
+## 3.1. Como configurar o Supabase
+
+1. Abra o painel do Supabase.
+2. Crie um projeto.
+3. Abra SQL Editor.
+4. Execute as migrations da pasta `supabase/migrations/` em ordem.
+5. Abra Authentication > Providers.
+6. Ative Email/Password.
+7. Abra Authentication > Users.
+8. Crie o primeiro usuário Admin.
+9. Copie o ID desse usuário.
+10. Abra Table Editor > users.
+11. Crie uma linha com:
+    - `auth_user_id`: o ID copiado do Authentication.
+    - `user_id`: o mesmo ID.
+    - `email`: e-mail do usuário.
+    - `name`: nome da pessoa.
+    - `role`: `Admin` ou `Super Admin`.
+    - `team`: `Operação`.
+12. Volte para a Hostinger e clique em Redeploy.
 
 ## 4. Arquivos alterados
 
@@ -56,6 +82,14 @@ Se quiser cadastrar mesmo assim, use como referência o arquivo:
 - `next-env.d.ts`: regenerado pelo Next.js 15 com as referências corretas de tipos.
 - `eslint.config.mjs`: passa a usar o preset oficial do Next.js 15 no formato flat config.
 - `src/features/incidents/simple-report-form.tsx`: remove atributos ARIA redundantes dos botões de classificação sem alterar o visual.
+- `src/lib/supabase.ts`: exporta os clientes Supabase usados pelo app.
+- `src/lib/supabase/config.ts`: centraliza as variáveis públicas do Supabase.
+- `src/lib/supabase/browser.ts`: cria cliente Supabase para o navegador.
+- `src/lib/supabase/server.ts`: cria cliente Supabase para uso no servidor/App Router.
+- `src/features/state/auth-store.tsx`: troca login local por Supabase Auth.
+- `src/features/state/atlas-store.tsx`: troca persistência principal local por persistência no Supabase.
+- `src/services/supabase-persistence.ts`: grava e carrega reports, incidents, evidências, atores, narrativas, alertas, imports, auditoria e blacklist.
+- `supabase/migrations/002_supabase_persistence_auth.sql`: adiciona `user_id`, `client_id`, payloads JSON e políticas de RLS.
 
 ## 5. Links dos arquivos no GitHub
 
@@ -73,6 +107,14 @@ Depois do push, os arquivos alterados estarão nestes links:
 - next-env.d.ts: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/next-env.d.ts
 - eslint.config.mjs: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/eslint.config.mjs
 - src/features/incidents/simple-report-form.tsx: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/features/incidents/simple-report-form.tsx
+- src/lib/supabase.ts: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/lib/supabase.ts
+- src/lib/supabase/config.ts: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/lib/supabase/config.ts
+- src/lib/supabase/browser.ts: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/lib/supabase/browser.ts
+- src/lib/supabase/server.ts: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/lib/supabase/server.ts
+- src/features/state/auth-store.tsx: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/features/state/auth-store.tsx
+- src/features/state/atlas-store.tsx: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/features/state/atlas-store.tsx
+- src/services/supabase-persistence.ts: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/src/services/supabase-persistence.ts
+- supabase/migrations/002_supabase_persistence_auth.sql: https://github.com/acessdavidcerqueira-oss/atlassentinellmonitor/blob/main/supabase/migrations/002_supabase_persistence_auth.sql
 
 ## 6. Arquivos que precisam subir para o GitHub
 
@@ -92,6 +134,14 @@ Os arquivos que devem estar no GitHub são:
 - next-env.d.ts
 - eslint.config.mjs
 - src/features/incidents/simple-report-form.tsx
+- src/lib/supabase.ts
+- src/lib/supabase/config.ts
+- src/lib/supabase/browser.ts
+- src/lib/supabase/server.ts
+- src/features/state/auth-store.tsx
+- src/features/state/atlas-store.tsx
+- src/services/supabase-persistence.ts
+- supabase/migrations/002_supabase_persistence_auth.sql
 
 ## 7. Checklist de deploy
 

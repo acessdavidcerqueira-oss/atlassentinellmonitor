@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { AtlasState, AuditLog, BlacklistEntry, BlacklistStatus, Evidence, Incident } from "@/types/domain";
 import { buildDemoState } from "@/services/demo-data";
@@ -9,6 +9,9 @@ import { classifyRisk } from "@/services/risk";
 import { createId } from "@/utils/id";
 import { isoNow } from "@/utils/date";
 import { canWrite, type DemoUser } from "@/features/auth/auth";
+import { useAuth } from "@/features/state/auth-store";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { loadAtlasStateFromSupabase, replaceAtlasStateInSupabase } from "@/services/supabase-persistence";
 
 type AtlasAction =
   | { type: "load"; state: AtlasState }
@@ -35,6 +38,8 @@ type AtlasAction =
 
 interface AtlasStoreValue extends AtlasState {
   activeEntityName: string;
+  loading: boolean;
+  syncError: string;
   addIncident: (incident: Incident, user: DemoUser) => void;
   updateIncident: (
     incidentId: string,
@@ -48,7 +53,7 @@ interface AtlasStoreValue extends AtlasState {
   updateBlacklistStatus: (entryId: string, status: BlacklistStatus, user: DemoUser) => void;
   importIncidents: (incidents: Incident[], report: AtlasState["imports"][number], user: DemoUser) => void;
   ackAlert: (alertId: string, user: DemoUser) => void;
-  resetDemo: () => void;
+  resetDemo: () => Promise<void>;
 }
 
 const AtlasContext = createContext<AtlasStoreValue | null>(null);
@@ -266,24 +271,97 @@ function normalizeState(state: AtlasState): AtlasState {
   };
 }
 
-function loadInitialState(): AtlasState {
-  if (typeof window === "undefined") return buildDemoState();
-  legacyStorageKeys.forEach((key) => window.localStorage.removeItem(key));
+function loadLocalStorageStateForMigration(): AtlasState | null {
+  if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(storageKey);
-  if (!raw) return buildDemoState();
+  if (!raw) return null;
   try {
     return normalizeState(JSON.parse(raw) as AtlasState);
   } catch {
-    return buildDemoState();
+    return null;
   }
 }
 
 export function AtlasProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, loadInitialState);
+  const { user, loading: authLoading } = useAuth();
+  const [state, dispatch] = useReducer(reducer, undefined, buildDemoState);
+  const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState("");
+  const hydratedUserId = useRef<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey, JSON.stringify(state));
-  }, [state]);
+    if (authLoading) return;
+    if (!user) {
+      hydratedUserId.current = null;
+      dispatch({ type: "load", state: buildDemoState() });
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const userId = user.id;
+    setLoading(true);
+    setSyncError("");
+
+    async function loadRemoteState() {
+      try {
+        if (!isSupabaseConfigured()) {
+          dispatch({ type: "load", state: buildDemoState() });
+          setSyncError("Supabase não está configurado. Os dados não serão persistidos no servidor.");
+          return;
+        }
+
+        const remoteState = await loadAtlasStateFromSupabase(userId);
+        const localState = loadLocalStorageStateForMigration();
+        const shouldMigrateLocal =
+          localState &&
+          remoteState.incidents.length === 0 &&
+          remoteState.evidences.length === 0 &&
+          remoteState.blacklist.length === 0 &&
+          (localState.incidents.length > 0 || localState.evidences.length > 0 || localState.blacklist.length > 0);
+
+        if (shouldMigrateLocal) {
+          await replaceAtlasStateInSupabase(userId, localState);
+          if (!cancelled) dispatch({ type: "load", state: localState });
+          clearLegacyLocalStorage();
+        } else if (!cancelled) {
+          dispatch({ type: "load", state: remoteState });
+          clearLegacyLocalStorage();
+        }
+
+        hydratedUserId.current = userId;
+      } catch (error) {
+        if (!cancelled) {
+          setSyncError(error instanceof Error ? error.message : "Não foi possível carregar dados do Supabase.");
+          dispatch({ type: "load", state: buildDemoState() });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadRemoteState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    if (!user || loading || hydratedUserId.current !== user.id || !isSupabaseConfigured()) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+
+    saveTimer.current = setTimeout(() => {
+      replaceAtlasStateInSupabase(user.id, state).catch((error: unknown) => {
+        setSyncError(error instanceof Error ? error.message : "Não foi possível salvar dados no Supabase.");
+      });
+    }, 350);
+
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [loading, state, user]);
 
   const value = useMemo<AtlasStoreValue>(() => {
     const activeEntity =
@@ -293,6 +371,8 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     return {
       ...state,
       activeEntityName: activeEntity?.name ?? "Não disponível",
+      loading,
+      syncError,
       addIncident: (incident, user) => dispatch({ type: "addIncident", incident, user }),
       updateIncident: (incidentId, patch, user, justification) =>
         dispatch({ type: "updateIncident", incidentId, patch, user, justification }),
@@ -305,11 +385,23 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       importIncidents: (incidents, report, user) =>
         dispatch({ type: "importIncidents", incidents, report, user }),
       ackAlert: (alertId, user) => dispatch({ type: "ackAlert", alertId, user }),
-      resetDemo: () => dispatch({ type: "load", state: buildDemoState() })
+      resetDemo: async () => {
+        const emptyState = buildDemoState();
+        dispatch({ type: "load", state: emptyState });
+        if (user && isSupabaseConfigured()) {
+          await replaceAtlasStateInSupabase(user.id, emptyState);
+        }
+      }
     };
-  }, [state]);
+  }, [loading, state, syncError, user]);
 
   return <AtlasContext.Provider value={value}>{children}</AtlasContext.Provider>;
+}
+
+function clearLegacyLocalStorage() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(storageKey);
+  legacyStorageKeys.forEach((key) => window.localStorage.removeItem(key));
 }
 
 export function useAtlas() {

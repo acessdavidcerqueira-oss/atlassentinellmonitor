@@ -33,14 +33,14 @@ export default function SettingsPage() {
   const [role, setRole] = useState<AccessRole>("Viewer");
   const [message, setMessage] = useState("");
 
-  function onAddUser(event: FormEvent<HTMLFormElement>) {
+  async function onAddUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!mayManageUsers) {
       setMessage("Seu acesso é somente visualização.");
       return;
     }
 
-    const ok = addUser({ email, password, role });
+    const ok = await addUser({ email, password, role });
     if (!ok) {
       setMessage("Verifique e-mail, senha ou se esse usuário já existe.");
       return;
