@@ -76,6 +76,23 @@ Configure as variáveis do Supabase no painel da Hostinger antes do redeploy:
 
 Os dados operacionais são salvos no Supabase com `user_id` e Row Level Security. O `localStorage` fica limitado a rascunhos temporários e migração única de dados antigos.
 
+### Provisionar Super Admin
+
+Crie um arquivo `.env.local` somente na sua máquina com:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL="https://SEU-PROJETO.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="SUA_SERVICE_ROLE_KEY"
+```
+
+Depois execute:
+
+```bash
+pnpm provision:admin
+```
+
+O comando cria ou atualiza `acessdavidcerqueira@gmail.com`, confirma o e-mail, define uma senha temporária forte e grava o perfil `Super Admin` em `public.users`. A `SUPABASE_SERVICE_ROLE_KEY` nunca deve ser cadastrada no frontend.
+
 ## Arquivos importantes
 
 - `src/types/domain.ts`: contratos do domínio.

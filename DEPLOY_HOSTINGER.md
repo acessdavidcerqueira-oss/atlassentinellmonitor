@@ -68,6 +68,23 @@ Use como referência o arquivo:
     - `team`: `Operação`.
 12. Volte para a Hostinger e clique em Redeploy.
 
+## 3.2. Provisionar o Super Admin sem SQL manual
+
+Na sua máquina, crie `.env.local` com:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL="https://SEU-PROJETO.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="SUA_SERVICE_ROLE_KEY"
+```
+
+Depois rode:
+
+```bash
+pnpm provision:admin
+```
+
+O terminal mostrará apenas e-mail, senha temporária, status e UUID. Não coloque `SUPABASE_SERVICE_ROLE_KEY` na Hostinger como variável pública e não exponha essa chave no frontend.
+
 ## 4. Arquivos alterados
 
 - `package.json`: ajusta Next.js para 15.5.22, mantém React 19.2.8, define Node 22.x, declara pnpm e limpa os scripts.
