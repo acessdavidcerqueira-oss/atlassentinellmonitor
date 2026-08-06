@@ -28,14 +28,7 @@ pnpm dev
 Abra `http://localhost:3000`.
 
 Crie os usuários no Supabase Auth antes do primeiro acesso ou use a aba Configurações com um usuário Admin já autenticado.
-
-Contas sugeridas para desenvolvimento:
-
-- `admin@atlas.local`
-- `cti@atlas.local`
-- `viewer@atlas.local`
-
-Senha sugerida para desenvolvimento: `atlas-demo`
+Não há login local, senha padrão ou conta fake no frontend.
 
 ## Scripts
 

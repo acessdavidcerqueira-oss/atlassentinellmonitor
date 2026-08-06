@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole, ShieldCheck } from "lucide-react";
+import { Database, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,16 +13,16 @@ import { useAuth } from "@/features/state/auth-store";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, demoUsers, loading, error: authError } = useAuth();
-  const [email, setEmail] = useState("admin@atlas.local");
-  const [password, setPassword] = useState("atlas-demo");
+  const { login, loading, error: authError } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const ok = await login(email, password);
     if (!ok) {
-      setError(authError || "Credenciais inválidas para o Supabase.");
+      setError(authError || "Credenciais inválidas ou usuário sem perfil no Supabase.");
       return;
     }
     router.replace("/");
@@ -52,10 +52,10 @@ export default function LoginPage() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Badge variant="success">
               <ShieldCheck className="mr-1 h-3 w-3" />
-              Demo local
+              Supabase Auth
             </Badge>
-            <Badge variant="muted">Sem envio real de alertas</Badge>
-            <Badge variant="muted">Sem dados privados</Badge>
+            <Badge variant="muted">Dados protegidos por RLS</Badge>
+            <Badge variant="muted">Persistência no servidor</Badge>
           </div>
         </div>
       </section>
@@ -71,16 +71,29 @@ export default function LoginPage() {
           <CardContent>
             <form className="space-y-4" onSubmit={onSubmit}>
               <div className="space-y-2">
-                <Label htmlFor="email">Usuário</Label>
-                <Input id="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+                <Label htmlFor="email">E-mail</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setError("");
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setError("");
+                  }}
                 />
               </div>
               {error ? <p className="text-sm text-red-200">{error}</p> : null}
@@ -90,20 +103,13 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-6 rounded-md border border-atlas-border bg-white/5 p-4 text-sm text-atlas-muted">
-              <p className="font-medium text-atlas-text">Contas de demonstração</p>
-              <div className="mt-3 space-y-2">
-                {demoUsers.map((user) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    className="block w-full rounded-md px-2 py-1 text-left hover:bg-white/5"
-                    onClick={() => setEmail(user.email)}
-                  >
-                    {user.email} · {user.role}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-3 text-xs">Senha: atlas-demo</p>
+              <p className="flex items-center gap-2 font-medium text-atlas-text">
+                <Database className="h-4 w-4 text-atlas-action" />
+                Acesso Supabase
+              </p>
+              <p className="mt-3 text-xs leading-5">
+                Use o e-mail e a senha cadastrados em Supabase Auth. O perfil precisa existir em public.users.
+              </p>
             </div>
           </CardContent>
         </Card>

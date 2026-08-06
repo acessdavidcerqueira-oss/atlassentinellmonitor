@@ -25,7 +25,7 @@ const roleDescriptions: Record<AccessRole, string> = {
 
 export default function SettingsPage() {
   const atlas = useAtlas();
-  const { user, demoUsers, addUser } = useAuth();
+  const { user, users, addUser } = useAuth();
   const mayWrite = canWrite(user);
   const mayManageUsers = canManageUsers(user);
   const [email, setEmail] = useState("");
@@ -66,8 +66,8 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-atlas-muted">
             <div className="flex flex-wrap gap-2">
-              <Badge variant="success"><ShieldCheck className="mr-1 h-3 w-3" />Demo local</Badge>
-              <Badge variant="muted">Supabase preparado</Badge>
+              <Badge variant="success"><ShieldCheck className="mr-1 h-3 w-3" />Supabase Auth</Badge>
+              <Badge variant="muted">RLS ativo</Badge>
               <Badge variant="muted">Alertas reais desligados</Badge>
             </div>
             <p>Usuário atual: {user?.name ?? "Não autenticado"} · {user?.role ?? "Sem papel"}</p>
@@ -159,7 +159,7 @@ export default function SettingsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {demoUsers.map((account) => (
+                  {users.map((account) => (
                     <TableRow key={account.id}>
                       <TableCell>
                         <div>

@@ -3,9 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  defaultDemoUsers,
   normalizeAccessRole,
-  toPublicUser,
   type AccessRole,
   type DemoUser
 } from "@/features/auth/auth";
@@ -18,7 +16,7 @@ interface AuthStoreValue {
   error: string;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
-  demoUsers: DemoUser[];
+  users: DemoUser[];
   addUser: (input: { email: string; password: string; role: AccessRole }) => Promise<boolean>;
 }
 
@@ -26,7 +24,7 @@ const AuthContext = createContext<AuthStoreValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<DemoUser | null>(null);
-  const [users, setUsers] = useState<DemoUser[]>(defaultDemoUsers.map(toPublicUser));
+  const [users, setUsers] = useState<DemoUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -59,7 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return false;
         }
 
-        const profile = await ensureUserProfile(data.user.id, data.user.email ?? email, data.user.user_metadata);
+        const profile = await loadUserProfile(data.user.id);
+        if (!profile) {
+          await supabase.auth.signOut();
+          setError("Usuário autenticado, mas sem perfil em public.users.");
+          return false;
+        }
         setUser(profile);
         await loadUsers(profile);
         return true;
@@ -69,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase?.auth.signOut();
         setUser(null);
       },
-      demoUsers: users,
+      users,
       async addUser(input) {
         const email = input.email.trim().toLowerCase();
         const password = input.password.trim();
@@ -137,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = createBrowserSupabaseClient();
     if (!supabase || !isSupabaseConfigured()) {
       setUser(null);
-      setUsers(defaultDemoUsers.map(toPublicUser));
+      setUsers([]);
       setLoading(false);
       return;
     }
@@ -149,7 +152,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const profile = await ensureUserProfile(data.user.id, data.user.email ?? "", data.user.user_metadata);
+    const profile = await loadUserProfile(data.user.id);
+    if (!profile) {
+      await supabase.auth.signOut();
+      setError("Sessão encontrada, mas sem perfil em public.users.");
+      setUser(null);
+      setUsers([]);
+      setLoading(false);
+      return;
+    }
     setUser(profile);
     await loadUsers(profile);
     setLoading(false);
@@ -192,21 +203,9 @@ function nameFromEmail(email: string): string {
     .join(" ") || "Usuário";
 }
 
-async function ensureUserProfile(
-  authUserId: string,
-  email: string,
-  metadata: Record<string, unknown>
-): Promise<DemoUser> {
+async function loadUserProfile(authUserId: string): Promise<DemoUser | null> {
   const supabase = createBrowserSupabaseClient();
-  if (!supabase) {
-    return {
-      id: authUserId,
-      name: nameFromEmail(email),
-      email,
-      role: "Admin",
-      team: "Operação"
-    };
-  }
+  if (!supabase) return null;
 
   const { data } = await supabase
     .from("users")
@@ -223,25 +222,5 @@ async function ensureUserProfile(
       team: data.team ?? (normalizeAccessRole(data.role) === "Viewer" ? "Visualização" : "Operação")
     };
   }
-
-  const role = normalizeAccessRole(String(metadata.role ?? "Admin"));
-  const profile: DemoUser = {
-    id: authUserId,
-    name: String(metadata.name ?? nameFromEmail(email)),
-    email,
-    role,
-    team: String(metadata.team ?? (role === "Viewer" ? "Visualização" : "Operação"))
-  };
-
-  await supabase.from("users").insert({
-    id: authUserId,
-    auth_user_id: authUserId,
-    user_id: authUserId,
-    name: profile.name,
-    email: profile.email,
-    role: profile.role,
-    team: profile.team
-  });
-
-  return profile;
+  return null;
 }
