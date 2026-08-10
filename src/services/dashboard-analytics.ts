@@ -13,7 +13,7 @@ import type {
 } from "@/types/domain";
 import { toDomain } from "@/utils/text";
 
-export type DashboardPeriod = "24h" | "7d" | "30d";
+export type DashboardPeriod = "total" | "24h" | "7d" | "30d";
 
 export interface CountEntry {
   name: string;
@@ -136,7 +136,8 @@ export interface DashboardAnalytics {
   unavailableSignals: string[];
 }
 
-const periodConfig: Record<DashboardPeriod, { label: string; hours: number }> = {
+const periodConfig: Record<DashboardPeriod, { label: string; hours: number | null }> = {
+  total: { label: "todo histórico", hours: null },
   "24h": { label: "últimas 24h", hours: 24 },
   "7d": { label: "últimos 7 dias", hours: 24 * 7 },
   "30d": { label: "últimos 30 dias", hours: 24 * 30 }
@@ -195,17 +196,21 @@ export function getDashboardAnalytics(
   now = new Date()
 ): DashboardAnalytics {
   const config = periodConfig[period];
-  const windowStart = new Date(now.getTime() - config.hours * 60 * 60 * 1000);
-  const previousWindowStart = new Date(windowStart.getTime() - config.hours * 60 * 60 * 1000);
+  const windowStart = config.hours === null ? new Date(0) : new Date(now.getTime() - config.hours * 60 * 60 * 1000);
+  const previousWindowStart =
+    config.hours === null ? new Date(0) : new Date(windowStart.getTime() - config.hours * 60 * 60 * 1000);
   const incidents = state.incidents
     .filter((incident) => !incident.deletedAt)
     .filter((incident) => isInsideWindow(eventDate(incident), windowStart, now));
-  const previousIncidents = state.incidents
-    .filter((incident) => !incident.deletedAt)
-    .filter((incident) => {
-      const date = eventDate(incident);
-      return Boolean(date && date >= previousWindowStart && date < windowStart);
-    });
+  const previousIncidents =
+    config.hours === null
+      ? []
+      : state.incidents
+          .filter((incident) => !incident.deletedAt)
+          .filter((incident) => {
+            const date = eventDate(incident);
+            return Boolean(date && date >= previousWindowStart && date < windowStart);
+          });
   const incidentIds = new Set(incidents.map((incident) => incident.id));
   const evidences = state.evidences.filter((evidence) =>
     isInsideWindow(parseDate(evidence.collectedAt), windowStart, now)
@@ -407,8 +412,11 @@ function buildCriticalAlerts(alerts: Alert[], incidents: Incident[]): DashboardA
 function buildTemporalSeries(incidents: Incident[], period: DashboardPeriod, now: Date): TemporalEntry[] {
   const config = periodConfig[period];
   const bucketCount = period === "24h" ? 12 : period === "7d" ? 7 : 15;
-  const bucketMs = (config.hours * 60 * 60 * 1000) / bucketCount;
-  const start = now.getTime() - config.hours * 60 * 60 * 1000;
+  const dates = incidents.map(eventDate).filter((date): date is Date => Boolean(date));
+  const totalStart = dates.length ? Math.min(...dates.map((date) => date.getTime())) : now.getTime();
+  const start = config.hours === null ? totalStart : now.getTime() - config.hours * 60 * 60 * 1000;
+  const end = now.getTime();
+  const bucketMs = Math.max(1, (end - start) / bucketCount);
   const buckets = Array.from({ length: bucketCount }, (_, index) => {
     const from = new Date(start + index * bucketMs);
     return {
@@ -556,6 +564,9 @@ function dateValue(date: Date | null): number {
 function formatBucketLabel(date: Date, period: DashboardPeriod): string {
   if (period === "24h") {
     return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(date);
+  }
+  if (period === "total") {
+    return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(date);
   }
   return date.toISOString().slice(5, 10);
 }

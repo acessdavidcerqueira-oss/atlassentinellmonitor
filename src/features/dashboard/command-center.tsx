@@ -44,6 +44,7 @@ import { formatDateTime } from "@/utils/date";
 
 const palette = ["#79DFFF", "#48CFF2", "#FBBF24", "#FB7185", "#34D399", "#A78BFA", "#F97316"];
 const periods: Array<{ value: DashboardPeriod; label: string }> = [
+  { value: "total", label: "Total" },
   { value: "24h", label: "24h" },
   { value: "7d", label: "7 dias" },
   { value: "30d", label: "30 dias" }
