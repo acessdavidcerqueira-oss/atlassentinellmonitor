@@ -13,7 +13,7 @@ import { useAtlas } from "@/features/state/atlas-store";
 import { formatDateTime } from "@/utils/date";
 
 export function CtiView() {
-  const { indicators, incidents } = useAtlas();
+  const { indicators, incidents, viewBasePath } = useAtlas();
   const cyberIncidents = incidents.filter((incident) =>
     ["Phishing", "Domínio fraudulento", "Malware", "Vazamento de credencial", "Ataque contra conta", "Ataque contra site", "Incidente cibernético"].includes(incident.category)
   );
@@ -87,7 +87,7 @@ export function CtiView() {
                   <TableCell>{indicator.status}</TableCell>
                   <TableCell>
                     {indicator.incidentIds.map((id) => (
-                      <Link key={id} className="mr-2 text-atlas-action" href={`/incidents/${id}`}>
+                      <Link key={id} className="mr-2 text-atlas-action" href={`${viewBasePath}/incidents/${id}`}>
                         Abrir
                       </Link>
                     ))}

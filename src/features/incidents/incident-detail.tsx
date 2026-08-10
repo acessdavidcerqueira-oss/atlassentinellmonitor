@@ -23,12 +23,13 @@ import { fakeNewsLabel } from "@/services/simple-report";
 import type { Evidence, EvidenceType, IncidentStatus } from "@/types/domain";
 import { evidenceTypes, incidentStatuses } from "@/types/domain";
 
-export function IncidentDetail() {
+export function IncidentDetail({ incidentId }: { incidentId?: string }) {
   const params = useParams<{ id: string }>();
   const atlas = useAtlas();
   const { user } = useAuth();
-  const mayWrite = canWrite(user);
-  const incident = atlas.incidents.find((item) => item.id === params.id);
+  const mayWrite = !atlas.readOnly && canWrite(user);
+  const resolvedIncidentId = incidentId ?? params.id;
+  const incident = atlas.incidents.find((item) => item.id === resolvedIncidentId);
   const [overrideScore, setOverrideScore] = useState(incident?.riskScore ?? 0);
   const [overrideJustification, setOverrideJustification] = useState("");
   const [status, setStatus] = useState<IncidentStatus>(incident?.status ?? "Novo");
@@ -219,127 +220,120 @@ export function IncidentDetail() {
                 <p className="text-sm text-atlas-muted">Não disponível.</p>
               )}
 
-              <div className="grid gap-3 rounded-md border border-atlas-border bg-white/5 p-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Tipo</Label>
-                  <Select
-                    value={evidence.type}
-                    onChange={(event) => setEvidence({ ...evidence, type: event.target.value as EvidenceType })}
-                    disabled={!mayWrite}
-                  >
-                    {evidenceTypes.map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                  </Select>
+              {mayWrite ? (
+                <div className="grid gap-3 rounded-md border border-atlas-border bg-white/5 p-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Tipo</Label>
+                    <Select
+                      value={evidence.type}
+                      onChange={(event) => setEvidence({ ...evidence, type: event.target.value as EvidenceType })}
+                    >
+                      {evidenceTypes.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fonte</Label>
+                    <Input
+                      value={evidence.source}
+                      onChange={(event) => setEvidence({ ...evidence, source: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Descrição</Label>
+                    <Input
+                      value={evidence.description}
+                      onChange={(event) => setEvidence({ ...evidence, description: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Arquivo ou URL</Label>
+                    <Input
+                      value={evidence.url}
+                      onChange={(event) => setEvidence({ ...evidence, url: event.target.value })}
+                    />
+                  </div>
+                  <Button type="button" onClick={addEvidence}>
+                    <FilePlus className="h-4 w-4" />
+                    Adicionar evidência
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label>Fonte</Label>
-                  <Input
-                    value={evidence.source}
-                    onChange={(event) => setEvidence({ ...evidence, source: event.target.value })}
-                    disabled={!mayWrite}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Descrição</Label>
-                  <Input
-                    value={evidence.description}
-                    onChange={(event) => setEvidence({ ...evidence, description: event.target.value })}
-                    disabled={!mayWrite}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Arquivo ou URL</Label>
-                  <Input
-                    value={evidence.url}
-                    onChange={(event) => setEvidence({ ...evidence, url: event.target.value })}
-                    disabled={!mayWrite}
-                  />
-                </div>
-                <Button type="button" onClick={addEvidence} disabled={!mayWrite}>
-                  <FilePlus className="h-4 w-4" />
-                  Adicionar evidência
-                </Button>
-              </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>
 
         <aside className="space-y-5">
-          <Card>
-            <CardHeader>
-              <CardTitle>Operação</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!mayWrite ? (
-                <p className="rounded-md border border-atlas-border bg-white/5 p-3 text-sm text-atlas-muted">
-                  Perfil Viewer: consulta liberada, alterações bloqueadas.
-                </p>
-              ) : null}
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={status} onChange={(event) => setStatus(event.target.value as IncidentStatus)} disabled={!mayWrite}>
-                  {incidentStatuses.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </Select>
-              </div>
-              <Button type="button" variant="secondary" onClick={applyStatus} disabled={!mayWrite}>
-                <Save className="h-4 w-4" />
-                Alterar status
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={!mayWrite}
-                onClick={() => {
-                  if (!user || !mayWrite) return;
-                  atlas.updateIncident(incident.id, { status: "Falso positivo" }, user, "Marcado como falso positivo pelo analista.");
-                }}
-              >
-                Marcar falso positivo
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                disabled={!mayWrite}
-                onClick={() => {
-                  if (!user || !mayWrite) return;
-                  atlas.updateIncident(incident.id, { status: "Escalonado" }, user, "Escalonamento manual para equipe responsável.");
-                }}
-              >
-                <AlertTriangle className="h-4 w-4" />
-                Escalonar
-              </Button>
-            </CardContent>
-          </Card>
+          {mayWrite ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Operação</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={status} onChange={(event) => setStatus(event.target.value as IncidentStatus)}>
+                    {incidentStatuses.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </Select>
+                </div>
+                <Button type="button" variant="secondary" onClick={applyStatus}>
+                  <Save className="h-4 w-4" />
+                  Alterar status
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    if (!user || !mayWrite) return;
+                    atlas.updateIncident(incident.id, { status: "Falso positivo" }, user, "Marcado como falso positivo pelo analista.");
+                  }}
+                >
+                  Marcar falso positivo
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => {
+                    if (!user || !mayWrite) return;
+                    atlas.updateIncident(incident.id, { status: "Escalonado" }, user, "Escalonamento manual para equipe responsável.");
+                  }}
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Escalonar
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Override humano de risco</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Label>Novo score</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={overrideScore}
-                onChange={(event) => setOverrideScore(Number(event.target.value))}
-                disabled={!mayWrite}
-              />
-              <Label>Justificativa obrigatória</Label>
-              <Textarea
-                value={overrideJustification}
-                onChange={(event) => setOverrideJustification(event.target.value)}
-                disabled={!mayWrite}
-              />
-              <Button type="button" onClick={applyOverride} disabled={!mayWrite || overrideJustification.trim().length < 10}>
-                <ShieldAlert className="h-4 w-4" />
-                Aplicar override
-              </Button>
-            </CardContent>
-          </Card>
+          {mayWrite ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Override humano de risco</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Label>Novo score</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={overrideScore}
+                  onChange={(event) => setOverrideScore(Number(event.target.value))}
+                />
+                <Label>Justificativa obrigatória</Label>
+                <Textarea
+                  value={overrideJustification}
+                  onChange={(event) => setOverrideJustification(event.target.value)}
+                />
+                <Button type="button" onClick={applyOverride} disabled={overrideJustification.trim().length < 10}>
+                  <ShieldAlert className="h-4 w-4" />
+                  Aplicar override
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -353,19 +347,21 @@ export function IncidentDetail() {
                     <Badge key={actor.id}>{actor.name}</Badge>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Select value={actorId} onChange={(event) => setActorId(event.target.value)} disabled={!mayWrite}>
-                    <option value="">Selecionar ator</option>
-                    {atlas.actors.map((actor) => (
-                      <option key={actor.id} value={actor.id}>
-                        {actor.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button type="button" variant="secondary" size="icon" onClick={relateActor} aria-label="Relacionar ator" disabled={!mayWrite}>
-                    <Link2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                {mayWrite ? (
+                  <div className="flex gap-2">
+                    <Select value={actorId} onChange={(event) => setActorId(event.target.value)}>
+                      <option value="">Selecionar ator</option>
+                      {atlas.actors.map((actor) => (
+                        <option key={actor.id} value={actor.id}>
+                          {actor.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button type="button" variant="secondary" size="icon" onClick={relateActor} aria-label="Relacionar ator">
+                      <Link2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label>Narrativas relacionadas</Label>
@@ -374,26 +370,27 @@ export function IncidentDetail() {
                     <Badge key={narrative.id}>{narrative.name}</Badge>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Select value={narrativeId} onChange={(event) => setNarrativeId(event.target.value)} disabled={!mayWrite}>
-                    <option value="">Selecionar narrativa</option>
-                    {atlas.narratives.map((narrative) => (
-                      <option key={narrative.id} value={narrative.id}>
-                        {narrative.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon"
-                    onClick={relateNarrative}
-                    aria-label="Relacionar narrativa"
-                    disabled={!mayWrite}
-                  >
-                    <Link2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                {mayWrite ? (
+                  <div className="flex gap-2">
+                    <Select value={narrativeId} onChange={(event) => setNarrativeId(event.target.value)}>
+                      <option value="">Selecionar narrativa</option>
+                      {atlas.narratives.map((narrative) => (
+                        <option key={narrative.id} value={narrative.id}>
+                          {narrative.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      onClick={relateNarrative}
+                      aria-label="Relacionar narrativa"
+                    >
+                      <Link2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -439,7 +436,7 @@ export function IncidentDetail() {
       </section>
 
       <Button asChild variant="secondary">
-        <Link href="/incidents">Voltar para incidentes</Link>
+        <Link href={`${atlas.viewBasePath}/incidents`}>Voltar para incidentes</Link>
       </Button>
     </div>
   );

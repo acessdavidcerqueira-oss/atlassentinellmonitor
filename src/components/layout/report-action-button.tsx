@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getReportThemeStyle, reportThemeCssVars } from "@/components/layout/report-theme-style";
 import { canWrite } from "@/features/auth/auth";
+import { useAtlas } from "@/features/state/atlas-store";
 import { useAuth } from "@/features/state/auth-store";
 import {
   reportThemeDefinitions,
@@ -21,8 +22,9 @@ export function ReportActionButton({
   const themeStyle = getReportThemeStyle(theme);
   const Icon = themeStyle.icon;
   const { user } = useAuth();
+  const { readOnly } = useAtlas();
 
-  if (!canWrite(user)) return null;
+  if (readOnly || !canWrite(user)) return null;
 
   return (
     <Button

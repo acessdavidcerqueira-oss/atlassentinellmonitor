@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import type { AtlasState, AuditLog, BlacklistEntry, BlacklistStatus, Evidence, Incident } from "@/types/domain";
 import { buildDemoState } from "@/services/demo-data";
 import { evaluateIncidentAlerts } from "@/services/alerts";
@@ -40,6 +41,9 @@ interface AtlasStoreValue extends AtlasState {
   activeEntityName: string;
   loading: boolean;
   syncError: string;
+  readOnly: boolean;
+  viewToken: string | null;
+  viewBasePath: string;
   addIncident: (incident: Incident, user: DemoUser) => void;
   updateIncident: (
     incidentId: string,
@@ -59,6 +63,10 @@ interface AtlasStoreValue extends AtlasState {
 const AtlasContext = createContext<AtlasStoreValue | null>(null);
 const storageKey = "atlas-sentinel-state-v3-empty";
 const legacyStorageKeys = ["atlas-sentinel-state-v1", "atlas-sentinel-state-v2"];
+
+interface SharedViewStateResponse {
+  state: AtlasState;
+}
 
 function auditLog(
   entityType: AuditLog["entityType"],
@@ -283,6 +291,30 @@ function normalizeState(state: AtlasState): AtlasState {
   };
 }
 
+function buildEmptyState(): AtlasState {
+  const fallback = buildDemoState();
+  return {
+    ...fallback,
+    monitoredEntities: [],
+    activeMonitoredEntityId: "",
+    incidents: [],
+    evidences: [],
+    actors: [],
+    narratives: [],
+    indicators: [],
+    alerts: [],
+    tasks: [],
+    blacklist: [],
+    auditLogs: [],
+    imports: []
+  };
+}
+
+function getReadOnlyToken(pathname: string): string | null {
+  const match = pathname.match(/^\/view\/([^/]+)/);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
 function loadLocalStorageStateForMigration(): AtlasState | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(storageKey);
@@ -295,14 +327,57 @@ function loadLocalStorageStateForMigration(): AtlasState | null {
 }
 
 export function AtlasProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const { user, loading: authLoading } = useAuth();
   const [state, dispatch] = useReducer(reducer, undefined, buildDemoState);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState("");
   const hydratedUserId = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readOnlyToken = useMemo(() => getReadOnlyToken(pathname), [pathname]);
+  const readOnly = Boolean(readOnlyToken);
 
   useEffect(() => {
+    if (readOnlyToken) {
+      const token = readOnlyToken;
+      let cancelled = false;
+      setLoading(true);
+      setSyncError("");
+      hydratedUserId.current = null;
+
+      async function loadSharedViewState() {
+        try {
+          const response = await fetch(`/api/shared-views/${encodeURIComponent(token)}/state`, {
+            cache: "no-store"
+          });
+          const payload = (await response.json().catch(() => null)) as
+            | (SharedViewStateResponse & { error?: string })
+            | null;
+
+          if (!response.ok || !payload?.state) {
+            throw new Error(payload?.error || "Link de visualização não encontrado.");
+          }
+
+          if (!cancelled) {
+            dispatch({ type: "load", state: normalizeState(payload.state) });
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setSyncError(error instanceof Error ? error.message : "Não foi possível carregar o link de visualização.");
+            dispatch({ type: "load", state: buildEmptyState() });
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      }
+
+      void loadSharedViewState();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (authLoading) return;
     if (!user) {
       hydratedUserId.current = null;
@@ -359,10 +434,10 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user]);
+  }, [authLoading, readOnlyToken, user]);
 
   useEffect(() => {
-    if (!user || loading || hydratedUserId.current !== user.id || !isSupabaseConfigured()) return;
+    if (readOnly || !user || loading || hydratedUserId.current !== user.id || !isSupabaseConfigured()) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     saveTimer.current = setTimeout(() => {
@@ -374,7 +449,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [loading, state, user]);
+  }, [loading, readOnly, state, user]);
 
   const value = useMemo<AtlasStoreValue>(() => {
     const activeEntity =
@@ -386,19 +461,35 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       activeEntityName: activeEntity?.name ?? "Não disponível",
       loading,
       syncError,
-      addIncident: (incident, user) => dispatch({ type: "addIncident", incident, user }),
-      updateIncident: (incidentId, patch, user, justification) =>
-        dispatch({ type: "updateIncident", incidentId, patch, user, justification }),
-      overrideRisk: (incidentId, score, justification, user) =>
-        dispatch({ type: "overrideRisk", incidentId, score, justification, user }),
-      addEvidence: (evidence, user) => dispatch({ type: "addEvidence", evidence, user }),
-      addBlacklistEntry: (entry, user) => dispatch({ type: "addBlacklistEntry", entry, user }),
-      updateBlacklistStatus: (entryId, status, user) =>
-        dispatch({ type: "updateBlacklistStatus", entryId, status, user }),
-      importIncidents: (incidents, report, user) =>
-        dispatch({ type: "importIncidents", incidents, report, user }),
-      ackAlert: (alertId, user) => dispatch({ type: "ackAlert", alertId, user }),
+      readOnly,
+      viewToken: readOnlyToken,
+      viewBasePath: readOnlyToken ? `/view/${readOnlyToken}` : "",
+      addIncident: (incident, user) => {
+        if (!readOnly) dispatch({ type: "addIncident", incident, user });
+      },
+      updateIncident: (incidentId, patch, user, justification) => {
+        if (!readOnly) dispatch({ type: "updateIncident", incidentId, patch, user, justification });
+      },
+      overrideRisk: (incidentId, score, justification, user) => {
+        if (!readOnly) dispatch({ type: "overrideRisk", incidentId, score, justification, user });
+      },
+      addEvidence: (evidence, user) => {
+        if (!readOnly) dispatch({ type: "addEvidence", evidence, user });
+      },
+      addBlacklistEntry: (entry, user) => {
+        if (!readOnly) dispatch({ type: "addBlacklistEntry", entry, user });
+      },
+      updateBlacklistStatus: (entryId, status, user) => {
+        if (!readOnly) dispatch({ type: "updateBlacklistStatus", entryId, status, user });
+      },
+      importIncidents: (incidents, report, user) => {
+        if (!readOnly) dispatch({ type: "importIncidents", incidents, report, user });
+      },
+      ackAlert: (alertId, user) => {
+        if (!readOnly) dispatch({ type: "ackAlert", alertId, user });
+      },
       resetDemo: async () => {
+        if (readOnly) return;
         const emptyState = buildDemoState();
         dispatch({ type: "load", state: emptyState });
         if (user && isSupabaseConfigured()) {
@@ -406,7 +497,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
         }
       }
     };
-  }, [loading, state, syncError, user]);
+  }, [loading, readOnly, readOnlyToken, state, syncError, user]);
 
   return <AtlasContext.Provider value={value}>{children}</AtlasContext.Provider>;
 }

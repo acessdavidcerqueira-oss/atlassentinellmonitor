@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { navItems } from "@/components/layout/nav-items";
 import { reportThemeCssVars } from "@/components/layout/report-theme-style";
+import { useAtlas } from "@/features/state/atlas-store";
 import { cn } from "@/lib/utils";
 import type { ReportTheme } from "@/services/simple-report";
 
@@ -21,8 +22,24 @@ const navThemeByHref: Partial<Record<string, ReportTheme>> = {
   "/evidencias": "evidencias"
 };
 
+const readOnlyAllowedHrefs = new Set([
+  "/",
+  "/incidents",
+  "/narrativas",
+  "/desinformacao",
+  "/fraudes",
+  "/cti",
+  "/ameacas",
+  "/atores",
+  "/coordenacao",
+  "/evidencias",
+  "/blacklist",
+  "/relatorios"
+]);
+
 export function Sidebar() {
   const pathname = usePathname();
+  const { readOnly, viewBasePath } = useAtlas();
 
   return (
     <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-atlas-border bg-[#040b1a]/92 backdrop-blur xl:flex xl:flex-col">
@@ -39,14 +56,16 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {navItems
           .filter((item) => !item.hidden)
+          .filter((item) => !readOnly || readOnlyAllowedHrefs.has(item.href))
           .map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href;
+            const href = readOnly ? `${viewBasePath}${item.href === "/" ? "" : item.href}` : item.href;
+            const active = pathname === href || (readOnly && item.href === "/" && pathname === viewBasePath);
             const theme = navThemeByHref[item.href];
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={href}
                 style={theme ? reportThemeCssVars(theme) : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-sm text-atlas-muted transition",

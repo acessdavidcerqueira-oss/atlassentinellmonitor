@@ -23,7 +23,7 @@ export function FilteredIncidentView({
   reportTheme: ReportTheme;
   predicate: (incident: Incident) => boolean;
 }) {
-  const { incidents } = useAtlas();
+  const { incidents, viewBasePath } = useAtlas();
   const filtered = incidents.filter((incident) => predicate(incident) && !incident.deletedAt);
 
   return (
@@ -36,7 +36,7 @@ export function FilteredIncidentView({
       <div className="grid gap-4 xl:grid-cols-2">
         {filtered.length ? (
           filtered.map((incident) => (
-            <Link key={incident.id} href={`/incidents/${incident.id}`}>
+            <Link key={incident.id} href={`${viewBasePath}/incidents/${incident.id}`}>
               <Card className="h-full transition hover:border-atlas-action/50">
                 <CardContent className="p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">

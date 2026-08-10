@@ -11,7 +11,7 @@ import { useAtlas } from "@/features/state/atlas-store";
 import { formatDateTime } from "@/utils/date";
 
 export function EvidenceView() {
-  const { evidences } = useAtlas();
+  const { evidences, viewBasePath } = useAtlas();
   return (
     <div>
       <PageTitle
@@ -39,7 +39,7 @@ export function EvidenceView() {
                 <TableRow key={evidence.id}>
                   <TableCell><Badge>{evidence.type}</Badge></TableCell>
                   <TableCell>{evidence.description}</TableCell>
-                  <TableCell><Link className="text-atlas-action" href={`/incidents/${evidence.incidentId}`}>Abrir</Link></TableCell>
+                  <TableCell><Link className="text-atlas-action" href={`${viewBasePath}/incidents/${evidence.incidentId}`}>Abrir</Link></TableCell>
                   <TableCell>{evidence.source}</TableCell>
                   <TableCell>{evidence.integrity}</TableCell>
                   <TableCell>{evidence.collectedBy}</TableCell>

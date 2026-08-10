@@ -5,15 +5,19 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { useAtlas } from "@/features/state/atlas-store";
 import { useAuth } from "@/features/state/auth-store";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading, error } = useAuth();
+  const atlas = useAtlas();
   const isLogin = pathname === "/login";
+  const isReadOnlyView = pathname.startsWith("/view/");
 
   useEffect(() => {
+    if (isReadOnlyView) return;
     if (loading) return;
     if (!user && !isLogin) {
       router.replace("/login");
@@ -21,17 +25,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (user && isLogin) {
       router.replace("/");
     }
-  }, [isLogin, loading, router, user]);
+  }, [isLogin, isReadOnlyView, loading, router, user]);
 
   if (isLogin) {
     return <>{children}</>;
   }
 
-  if (loading) {
+  if (!isReadOnlyView && loading) {
     return <div className="flex min-h-screen items-center justify-center text-atlas-muted">Carregando sessão...</div>;
   }
 
-  if (!user) {
+  if (!isReadOnlyView && !user) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4 text-center text-atlas-muted">
         <div className="max-w-md rounded-md border border-atlas-border bg-atlas-panel p-6">
@@ -39,6 +43,21 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className="mt-2 text-sm leading-6">
             {error || "Você será redirecionado para o login."}
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isReadOnlyView && atlas.loading) {
+    return <div className="flex min-h-screen items-center justify-center text-atlas-muted">Carregando visualização...</div>;
+  }
+
+  if (isReadOnlyView && atlas.syncError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 text-center text-atlas-muted">
+        <div className="max-w-md rounded-md border border-atlas-border bg-atlas-panel p-6">
+          <p className="font-medium text-atlas-text">Link de visualização indisponível</p>
+          <p className="mt-2 text-sm leading-6">{atlas.syncError}</p>
         </div>
       </div>
     );

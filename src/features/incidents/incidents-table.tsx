@@ -118,7 +118,7 @@ export function IncidentsTable() {
                     <TableRow key={incident.id}>
                       <TableCell>
                         <div className="min-w-[180px]">
-                          <Link href={`/incidents/${incident.id}`} className="font-medium text-atlas-ice hover:text-atlas-action">
+                          <Link href={`${state.viewBasePath}/incidents/${incident.id}`} className="font-medium text-atlas-ice hover:text-atlas-action">
                             {page || "Não disponível"}
                           </Link>
                           <p className="mt-1 max-w-[260px] truncate text-xs text-atlas-muted">
@@ -152,7 +152,7 @@ export function IncidentsTable() {
                       </TableCell>
                       <TableCell>
                         <Button asChild variant="ghost" size="icon" aria-label="Abrir incidente">
-                          <Link href={`/incidents/${incident.id}`}>
+                          <Link href={`${state.viewBasePath}/incidents/${incident.id}`}>
                             <ExternalLink className="h-4 w-4" />
                           </Link>
                         </Button>

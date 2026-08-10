@@ -120,44 +120,46 @@ export function CommandCenter() {
         ))}
       </section>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle>Iniciar report</CardTitle>
-            <p className="mt-1 text-sm text-atlas-muted">
-              A Dash geral concentra todos os atalhos. Cada aba também tem seu botão já no tema certo.
-            </p>
-          </div>
-          <ReportActionButton theme="geral" label="Novo report geral" />
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-          {dashboardReportThemes.map((theme) => {
-            const config = reportThemeDefinitions[theme];
-            const themeStyle = getReportThemeStyle(theme);
-            const Icon = themeStyle.icon;
-            return (
-              <div
-                key={theme}
-                style={reportThemeCssVars(theme)}
-                className="rounded-md border border-[color:var(--report-border)] bg-[color:var(--report-bg)] p-3 transition hover:bg-[color:var(--report-hover)]"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--report-border)] bg-black/10 text-[color:var(--report-accent)]">
-                    <Icon className="h-5 w-5" />
+      {!state.readOnly ? (
+        <Card>
+          <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle>Iniciar report</CardTitle>
+              <p className="mt-1 text-sm text-atlas-muted">
+                A Dash geral concentra todos os atalhos. Cada aba também tem seu botão já no tema certo.
+              </p>
+            </div>
+            <ReportActionButton theme="geral" label="Novo report geral" />
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {dashboardReportThemes.map((theme) => {
+              const config = reportThemeDefinitions[theme];
+              const themeStyle = getReportThemeStyle(theme);
+              const Icon = themeStyle.icon;
+              return (
+                <div
+                  key={theme}
+                  style={reportThemeCssVars(theme)}
+                  className="rounded-md border border-[color:var(--report-border)] bg-[color:var(--report-bg)] p-3 transition hover:bg-[color:var(--report-hover)]"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--report-border)] bg-black/10 text-[color:var(--report-accent)]">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-atlas-text">{config.shortLabel}</p>
+                      <p className="mt-1 min-h-10 text-xs leading-5 text-atlas-muted">{config.description}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-atlas-text">{config.shortLabel}</p>
-                    <p className="mt-1 min-h-10 text-xs leading-5 text-atlas-muted">{config.description}</p>
+                  <div className="mt-3">
+                    <ReportActionButton theme={theme} label="Iniciar" />
                   </div>
                 </div>
-                <div className="mt-3">
-                  <ReportActionButton theme={theme} label="Iniciar" />
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
         <Card>
@@ -222,9 +224,9 @@ export function CommandCenter() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <AlertsPanel items={analytics.criticalAlerts} />
-        <IncidentList title="Aguardando triagem" items={analytics.triage} />
-        <EvidencePanel items={analytics.recentEvidences} />
+        <AlertsPanel items={analytics.criticalAlerts} basePath={state.viewBasePath} />
+        <IncidentList title="Aguardando triagem" items={analytics.triage} basePath={state.viewBasePath} />
+        <EvidencePanel items={analytics.recentEvidences} basePath={state.viewBasePath} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.95fr_0.95fr]">
@@ -391,7 +393,7 @@ function SourcesPanel({ items }: { items: ReturnType<typeof getDashboardAnalytic
   );
 }
 
-function AlertsPanel({ items }: { items: DashboardAlert[] }) {
+function AlertsPanel({ items, basePath }: { items: DashboardAlert[]; basePath: string }) {
   return (
     <Card>
       <CardHeader>
@@ -412,7 +414,7 @@ function AlertsPanel({ items }: { items: DashboardAlert[] }) {
                 <Badge variant="muted">{alert.category}</Badge>
                 <Badge variant="critical">{alert.status}</Badge>
                 {alert.incidentId ? (
-                  <Link href={`/incidents/${alert.incidentId}`} className="ml-auto text-xs font-medium text-atlas-action hover:text-atlas-tech">
+                  <Link href={`${basePath}/incidents/${alert.incidentId}`} className="ml-auto text-xs font-medium text-atlas-action hover:text-atlas-tech">
                     Ver incidente
                   </Link>
                 ) : null}
@@ -423,7 +425,7 @@ function AlertsPanel({ items }: { items: DashboardAlert[] }) {
           <EmptyState>Nenhum alerta crítico ou alto ativo.</EmptyState>
         )}
         <Button asChild variant="secondary" size="sm">
-          <Link href="/incidents">
+          <Link href={`${basePath}/incidents`}>
             Ver incidentes
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -433,7 +435,15 @@ function AlertsPanel({ items }: { items: DashboardAlert[] }) {
   );
 }
 
-function IncidentList({ title, items }: { title: string; items: ReturnType<typeof getDashboardAnalytics>["triage"] }) {
+function IncidentList({
+  title,
+  items,
+  basePath
+}: {
+  title: string;
+  items: ReturnType<typeof getDashboardAnalytics>["triage"];
+  basePath: string;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -444,7 +454,7 @@ function IncidentList({ title, items }: { title: string; items: ReturnType<typeo
           items.map((incident) => (
             <Link
               key={incident.id}
-              href={`/incidents/${incident.id}`}
+              href={`${basePath}/incidents/${incident.id}`}
               className="block rounded-md border border-atlas-border bg-white/5 p-3 transition hover:bg-white/8"
             >
               <div className="flex items-start justify-between gap-3">
@@ -464,7 +474,7 @@ function IncidentList({ title, items }: { title: string; items: ReturnType<typeo
           <EmptyState>Nenhum report aguardando triagem.</EmptyState>
         )}
         <Button asChild variant="secondary" size="sm">
-          <Link href="/incidents">
+          <Link href={`${basePath}/incidents`}>
             Ver incidentes
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -474,7 +484,7 @@ function IncidentList({ title, items }: { title: string; items: ReturnType<typeo
   );
 }
 
-function EvidencePanel({ items }: { items: DashboardEvidence[] }) {
+function EvidencePanel({ items, basePath }: { items: DashboardEvidence[]; basePath: string }) {
   return (
     <Card>
       <CardHeader>
@@ -485,7 +495,7 @@ function EvidencePanel({ items }: { items: DashboardEvidence[] }) {
           items.map((evidence) => (
             <Link
               key={evidence.id}
-              href={`/incidents/${evidence.incidentId}`}
+              href={`${basePath}/incidents/${evidence.incidentId}`}
               className="block rounded-md border border-atlas-border bg-white/5 p-3 transition hover:bg-white/8"
             >
               <div className="flex items-start gap-3">

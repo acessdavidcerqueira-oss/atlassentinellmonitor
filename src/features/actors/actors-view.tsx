@@ -12,7 +12,7 @@ import { useAtlas } from "@/features/state/atlas-store";
 import { formatDateTime } from "@/utils/date";
 
 export function ActorsView() {
-  const { actors } = useAtlas();
+  const { actors, viewBasePath } = useAtlas();
 
   return (
     <div>
@@ -68,7 +68,7 @@ export function ActorsView() {
               <p className="mt-2 text-sm text-atlas-muted">{actor.description}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {actor.incidentIds.map((id) => (
-                  <Link key={id} href={`/incidents/${id}`}>
+                  <Link key={id} href={`${viewBasePath}/incidents/${id}`}>
                     <Badge>{id.replace("inc_demo_", "#")}</Badge>
                   </Link>
                 ))}

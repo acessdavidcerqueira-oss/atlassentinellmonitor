@@ -45,7 +45,7 @@ const initialForm = {
 export function BlacklistView() {
   const atlas = useAtlas();
   const { user } = useAuth();
-  const mayWrite = canWrite(user);
+  const mayWrite = !atlas.readOnly && canWrite(user);
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
 
@@ -102,97 +102,99 @@ export function BlacklistView() {
         description="Sites e links bloqueados, em validação ou monitoramento."
       />
 
-      <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldX className="h-5 w-5 text-red-200" />
-              Novo item
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-4" onSubmit={onSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="blacklist-value">Site ou link</Label>
-                <Input
-                  id="blacklist-value"
-                  value={form.value}
-                  onChange={(event) => {
-                    setForm((current) => ({ ...current, value: event.target.value }));
-                    setError("");
-                  }}
-                  placeholder="dominio.com ou https://..."
-                  disabled={!mayWrite}
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
+      <div className={atlas.readOnly ? "grid gap-4" : "grid gap-4 xl:grid-cols-[420px_1fr]"}>
+        {!atlas.readOnly ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldX className="h-5 w-5 text-red-200" />
+                Novo item
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="grid gap-4" onSubmit={onSubmit}>
                 <div className="space-y-2">
-                  <Label htmlFor="blacklist-kind">Tipo</Label>
-                  <Select
-                    id="blacklist-kind"
-                    value={form.kind}
-                    onChange={(event) => setForm((current) => ({ ...current, kind: event.target.value as BlacklistKind }))}
+                  <Label htmlFor="blacklist-value">Site ou link</Label>
+                  <Input
+                    id="blacklist-value"
+                    value={form.value}
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, value: event.target.value }));
+                      setError("");
+                    }}
+                    placeholder="dominio.com ou https://..."
                     disabled={!mayWrite}
-                  >
-                    <option value="site">Site</option>
-                    <option value="link">Link</option>
-                  </Select>
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="blacklist-kind">Tipo</Label>
+                    <Select
+                      id="blacklist-kind"
+                      value={form.kind}
+                      onChange={(event) => setForm((current) => ({ ...current, kind: event.target.value as BlacklistKind }))}
+                      disabled={!mayWrite}
+                    >
+                      <option value="site">Site</option>
+                      <option value="link">Link</option>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="blacklist-status">Status</Label>
+                    <Select
+                      id="blacklist-status"
+                      value={form.status}
+                      onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as BlacklistStatus }))}
+                      disabled={!mayWrite}
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="blacklist-status">Status</Label>
-                  <Select
-                    id="blacklist-status"
-                    value={form.status}
-                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as BlacklistStatus }))}
+                  <Label htmlFor="blacklist-source">Origem</Label>
+                  <Input
+                    id="blacklist-source"
+                    value={form.source}
+                    onChange={(event) => setForm((current) => ({ ...current, source: event.target.value }))}
+                    placeholder="Report, analista, monitoramento..."
                     disabled={!mayWrite}
-                  >
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
+                  />
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="blacklist-source">Origem</Label>
-                <Input
-                  id="blacklist-source"
-                  value={form.source}
-                  onChange={(event) => setForm((current) => ({ ...current, source: event.target.value }))}
-                  placeholder="Report, analista, monitoramento..."
-                  disabled={!mayWrite}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="blacklist-reason">Motivo</Label>
+                  <Textarea
+                    id="blacklist-reason"
+                    value={form.reason}
+                    onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
+                    placeholder="Motivo da inclusão ou observação operacional"
+                    disabled={!mayWrite}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="blacklist-reason">Motivo</Label>
-                <Textarea
-                  id="blacklist-reason"
-                  value={form.reason}
-                  onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
-                  placeholder="Motivo da inclusão ou observação operacional"
-                  disabled={!mayWrite}
-                />
-              </div>
+                {error ? <p className="text-sm text-red-200">{error}</p> : null}
+                {!mayWrite ? (
+                  <p className="rounded-md border border-atlas-border bg-white/5 p-3 text-sm text-atlas-muted">
+                    Perfil Viewer: consulta liberada, cadastro e alteração de status bloqueados.
+                  </p>
+                ) : null}
 
-              {error ? <p className="text-sm text-red-200">{error}</p> : null}
-              {!mayWrite ? (
-                <p className="rounded-md border border-atlas-border bg-white/5 p-3 text-sm text-atlas-muted">
-                  Perfil Viewer: consulta liberada, cadastro e alteração de status bloqueados.
-                </p>
-              ) : null}
-
-              <Button type="submit" disabled={!mayWrite}>
-                <Link2 className="h-4 w-4" />
-                Inserir na blacklist
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+                <Button type="submit" disabled={!mayWrite}>
+                  <Link2 className="h-4 w-4" />
+                  Inserir na blacklist
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader>
@@ -224,20 +226,25 @@ export function BlacklistView() {
                         <Badge variant="muted">{entry.kind === "site" ? "Site" : "Link"}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Select
-                          value={entry.status}
-                          onChange={(event) => updateStatus(entry.id, event.target.value as BlacklistStatus)}
-                          disabled={!mayWrite}
-                        >
-                          {statusOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </Select>
-                        <div className="mt-2">
+                        {mayWrite ? (
+                          <>
+                            <Select
+                              value={entry.status}
+                              onChange={(event) => updateStatus(entry.id, event.target.value as BlacklistStatus)}
+                            >
+                              {statusOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Select>
+                            <div className="mt-2">
+                              <Badge variant={statusVariant[entry.status]}>{statusLabel(entry.status)}</Badge>
+                            </div>
+                          </>
+                        ) : (
                           <Badge variant={statusVariant[entry.status]}>{statusLabel(entry.status)}</Badge>
-                        </div>
+                        )}
                       </TableCell>
                       <TableCell className="max-w-xs text-sm text-atlas-muted">{entry.reason || "Não informado"}</TableCell>
                       <TableCell>{entry.source || entry.createdBy}</TableCell>

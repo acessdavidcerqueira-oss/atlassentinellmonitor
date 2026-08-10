@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/config";
 
 const publicRoutes = new Set(["/login"]);
+const publicPrefixes = ["/view/", "/api/shared-views/"];
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({
@@ -34,7 +35,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isPublicRoute = publicRoutes.has(pathname);
+  const isPublicRoute = publicRoutes.has(pathname) || publicPrefixes.some((prefix) => pathname.startsWith(prefix));
 
   if (!user && !isPublicRoute) {
     const loginUrl = request.nextUrl.clone();

@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ReportActionButton } from "@/components/layout/report-action-button";
+import { ShareViewButton } from "@/components/layout/share-view-button";
 import { useAtlas } from "@/features/state/atlas-store";
 import { useAuth } from "@/features/state/auth-store";
 import { formatDateTime } from "@/utils/date";
 
 export function Topbar() {
   const { user, logout } = useAuth();
-  const { activeEntityName, alerts, incidents } = useAtlas();
+  const { activeEntityName, alerts, incidents, readOnly } = useAtlas();
   const criticalAlerts = alerts.filter((alert) => alert.severity === "Crítico" && alert.status !== "resolvido");
   const lastUpdate = incidents
     .map((incident) => incident.updatedAt)
@@ -27,6 +28,7 @@ export function Topbar() {
             <ShieldCheck className="mr-1 h-3 w-3" />
             Base limpa
           </Badge>
+          {readOnly ? <Badge variant="low">MODO VISUALIZAÇÃO</Badge> : null}
           <div
             className="flex h-8 items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 text-xs text-cyan-100 shadow-[0_0_22px_rgba(72,207,242,0.12)]"
             aria-label="Leitura contínua ativa"
@@ -54,22 +56,32 @@ export function Topbar() {
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-atlas-muted" />
             <Input className="pl-9" placeholder="Pesquisa global" aria-label="Pesquisa global" />
           </div>
-          <div className="hidden text-right text-xs md:block">
-            <div className="font-medium text-atlas-text">{user?.name ?? "Não autenticado"}</div>
-            <div className="text-atlas-muted">{user?.role ?? "Sem papel"}</div>
-          </div>
-          <ReportActionButton theme="geral" label="Novo report" />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Sair"
-            onClick={() => {
-              logout();
-              window.location.href = "/login";
-            }}
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
+          {readOnly ? (
+            <div className="hidden text-right text-xs md:block">
+              <div className="font-medium text-atlas-text">Acesso externo</div>
+              <div className="text-atlas-muted">Somente leitura</div>
+            </div>
+          ) : (
+            <>
+              <div className="hidden text-right text-xs md:block">
+                <div className="font-medium text-atlas-text">{user?.name ?? "Não autenticado"}</div>
+                <div className="text-atlas-muted">{user?.role ?? "Sem papel"}</div>
+              </div>
+              <ShareViewButton />
+              <ReportActionButton theme="geral" label="Novo report" />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Sair"
+                onClick={() => {
+                  logout();
+                  window.location.href = "/login";
+                }}
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </header>
