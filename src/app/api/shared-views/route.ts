@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Não foi possível gerar o link de visualização." }, { status: 500 });
   }
 
-  const url = `${request.nextUrl.origin}/view/${sharedView.token}`;
+  const url = `${publicOrigin(request)}/view/${sharedView.token}`;
 
   return NextResponse.json({
     token: sharedView.token,
@@ -56,4 +56,17 @@ export async function POST(request: NextRequest) {
     name: sharedView.name,
     createdAt: sharedView.created_at
   });
+}
+
+function publicOrigin(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || (host.includes("localhost") || host.startsWith("0.0.0.0") ? "http" : "https");
+
+  if (host.startsWith("0.0.0.0")) {
+    return process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://atlascybersecurity.org";
+  }
+
+  return `${protocol}://${host}`;
 }
