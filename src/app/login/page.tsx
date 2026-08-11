@@ -34,15 +34,10 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-atlas-grid bg-[length:44px_44px] opacity-60" />
         <div className="radar-sweep absolute h-[520px] w-[520px] rounded-full border border-atlas-border bg-radar-ring opacity-80" />
         <div className="relative z-10 max-w-2xl">
-          <div className="mb-8 flex items-center gap-4">
-            <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-atlas-border bg-atlas-raised">
-              <Image src="/atlas-sentinel-logo.png" alt="Atlas Sentinel" fill sizes="64px" className="object-cover" priority />
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.36em] text-atlas-tech">Executive CTI</p>
-              <h1 className="font-display text-5xl font-semibold tracking-tight text-atlas-text md:text-7xl">
-                ATLAS SENTINEL
-              </h1>
+          <div className="mb-8">
+            <p className="text-xs uppercase tracking-[0.36em] text-atlas-tech">Executive CTI</p>
+            <div className="relative mt-4 h-36 w-full max-w-xl overflow-hidden">
+              <Image src="/atlas-sentinel-logo.png" alt="Atlas Sentinel" fill sizes="576px" className="object-contain object-left" priority />
             </div>
           </div>
           <p className="max-w-xl text-lg leading-8 text-atlas-muted">

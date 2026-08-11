@@ -7,7 +7,12 @@ export const metadata: Metadata = {
   title: "ATLAS SENTINEL | Executive CTI",
   description: "Executive CTI & Digital Threat Intelligence command center",
   icons: {
-    icon: "/atlas-sentinel-logo.png"
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon.png", type: "image/png" }
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/favicon.png"
   }
 };
 

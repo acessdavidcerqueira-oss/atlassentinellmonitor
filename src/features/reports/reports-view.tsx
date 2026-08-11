@@ -110,7 +110,7 @@ export function ReportsView() {
       <Card className="print:border-slate-200 print:bg-white">
         <CardHeader className="flex flex-row items-center gap-4">
           <div className="relative h-12 w-12 overflow-hidden rounded-md border border-atlas-border">
-            <Image src="/atlas-sentinel-logo.png" alt="Atlas Sentinel" fill sizes="48px" className="object-cover" />
+            <Image src="/atlas-sentinel-mark.png" alt="Atlas Sentinel" fill sizes="48px" className="object-contain" />
           </div>
           <div>
             <CardTitle>Relatório executivo completo</CardTitle>

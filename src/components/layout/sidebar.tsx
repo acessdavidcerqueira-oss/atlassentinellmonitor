@@ -43,13 +43,9 @@ export function Sidebar() {
 
   return (
     <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-atlas-border bg-[#040b1a]/92 backdrop-blur xl:flex xl:flex-col">
-      <div className="flex h-20 items-center gap-3 border-b border-atlas-border px-5">
-        <div className="relative h-11 w-11 overflow-hidden rounded-md border border-atlas-border bg-atlas-raised">
-          <Image src="/atlas-sentinel-logo.png" alt="Atlas Sentinel" fill sizes="44px" className="object-cover" />
-        </div>
-        <div>
-          <div className="font-display text-sm font-semibold tracking-[0.18em] text-atlas-ice">ATLAS</div>
-          <div className="text-xs uppercase tracking-[0.22em] text-atlas-muted">Sentinel</div>
+      <div className="flex h-20 items-center border-b border-atlas-border px-5">
+        <div className="relative h-12 w-52 overflow-hidden">
+          <Image src="/atlas-sentinel-logo.png" alt="Atlas Sentinel" fill sizes="208px" className="object-contain object-left" priority />
         </div>
       </div>
 
