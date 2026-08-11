@@ -10,44 +10,98 @@ import { Badge } from "@/components/ui/badge";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { useAtlas } from "@/features/state/atlas-store";
 import { exportIncidentsCsv } from "@/services/csv-import";
+import { getDashboardAnalytics } from "@/services/dashboard-analytics";
 import { formatDateTime } from "@/utils/date";
+import type { Actor, Incident, RiskLevel } from "@/types/domain";
+
+interface PageGroup {
+  name: string;
+  reports: number;
+  reach: number;
+  platforms: string[];
+  categories: string[];
+  latest: string;
+  maxRisk: number;
+  riskLevel: RiskLevel;
+}
+
+const modules = [
+  {
+    title: "Desinformação",
+    description: "Fake news, conteúdo enganoso, fora de contexto, manipulado e narrativas negativas.",
+    predicate: (incident: Incident) =>
+      ["Desinformação", "Conteúdo enganoso", "Conteúdo fora de contexto", "Conteúdo manipulado", "Deepfake", "Narrativa negativa"].includes(incident.category)
+  },
+  {
+    title: "Fraudes e Impersonação",
+    description: "Perfis falsos, golpes, impersonação, phishing e domínios fraudulentos.",
+    predicate: (incident: Incident) =>
+      ["Perfil falso", "Impersonação", "Fraude", "Golpe financeiro", "Phishing", "Domínio fraudulento"].includes(incident.category)
+  },
+  {
+    title: "Cyber Threats",
+    description: "Phishing, malware, vazamento de credencial, ataque contra conta/site e incidente cibernético.",
+    predicate: (incident: Incident) =>
+      ["Phishing", "Domínio fraudulento", "Malware", "Vazamento de credencial", "Ataque contra conta", "Ataque contra site", "Incidente cibernético", "Exposição de dados"].includes(incident.category)
+  },
+  {
+    title: "Ameaças à Pessoa",
+    description: "Assédio, ameaça física, incitação à violência, exposição de agenda ou localização.",
+    predicate: (incident: Incident) =>
+      ["Ameaça física", "Incitação à violência", "Assédio", "Exposição de agenda", "Exposição de localização"].includes(incident.category) ||
+      incident.threatLevel >= 2
+  },
+  {
+    title: "Coordenação",
+    description: "Movimentos coordenados, repetição, amplificação ou indícios de ação conjunta.",
+    predicate: (incident: Incident) => incident.category === "Movimento coordenado" || incident.coordinationLevel !== "Não identificado"
+  }
+];
 
 export function ReportsView() {
   const state = useAtlas();
-  const last24 = state.incidents.filter((incident) => Date.now() - new Date(incident.collectedAt).getTime() <= 24 * 60 * 60 * 1000);
-  const critical = last24.filter((incident) => incident.riskScore > 70 || incident.threatLevel >= 4);
-  const pending = state.tasks.filter((task) => task.status !== "concluída");
+  const allIncidents = state.incidents
+    .filter((incident) => !incident.deletedAt)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const last24 = allIncidents.filter((incident) => Date.now() - new Date(incident.collectedAt).getTime() <= 24 * 60 * 60 * 1000);
+  const critical = allIncidents.filter((incident) => incident.riskScore > 70 || incident.threatLevel >= 4);
+  const analytics = getDashboardAnalytics(state, "total");
+  const pageGroups = buildPageGroups(allIncidents);
 
   function exportCsv() {
     const blob = new Blob([exportIncidentsCsv(state)], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "atlas-sentinel-briefing-diario.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, "atlas-sentinel-relatorio-completo.csv");
   }
 
   function exportJson() {
-    const blob = new Blob([JSON.stringify({ last24, critical, pending }, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "atlas-sentinel-briefing-diario.json";
-    link.click();
-    URL.revokeObjectURL(url);
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      monitoredEntity: state.activeEntityName,
+      kpis: analytics.kpis,
+      pages: pageGroups,
+      incidents: allIncidents,
+      actors: state.actors,
+      narratives: state.narratives,
+      evidences: state.evidences,
+      blacklist: state.blacklist,
+      alerts: state.alerts,
+      imports: state.imports,
+      auditLogs: state.auditLogs
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    downloadBlob(blob, "atlas-sentinel-relatorio-completo.json");
   }
 
   return (
     <div>
       <PageTitle
         title="Relatórios"
-        description="Briefing diário, relatórios por incidente, ameaça, desinformação, fraude, CTI e resumo executivo."
+        description="Relatório completo por páginas, categorias, abas operacionais, KPIs e conteúdos registrados."
         actions={
           <>
             <Button variant="secondary" onClick={exportCsv}><Download className="h-4 w-4" />CSV</Button>
             <Button variant="secondary" onClick={exportJson}><Download className="h-4 w-4" />JSON</Button>
-            <Button onClick={() => window.print()}><Printer className="h-4 w-4" />Imprimir</Button>
+            <Button onClick={() => window.print()}><Printer className="h-4 w-4" />PDF completo</Button>
             <ReportActionButton theme="geral" label="Novo report" />
           </>
         }
@@ -59,44 +113,175 @@ export function ReportsView() {
             <Image src="/atlas-sentinel-logo.png" alt="Atlas Sentinel" fill sizes="48px" className="object-cover" />
           </div>
           <div>
-            <CardTitle>Briefing diário</CardTitle>
-            <p className="text-sm text-atlas-muted">Gerado em {formatDateTime(new Date().toISOString())}</p>
+            <CardTitle>Relatório executivo completo</CardTitle>
+            <p className="text-sm text-atlas-muted">
+              {state.activeEntityName} · Gerado em {formatDateTime(new Date().toISOString())}
+            </p>
           </div>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-8">
           <section>
-            <h2 className="font-display text-xl font-semibold">Resumo das últimas 24 horas</h2>
+            <h2 className="font-display text-xl font-semibold">Resumo geral</h2>
             <p className="mt-2 text-sm leading-6 text-atlas-muted">
-              Foram registrados {last24.length} reports no período. Métricas ausentes permanecem como “Não disponível”.
+              Foram registrados {allIncidents.length} reports no histórico, sendo {last24.length} nas últimas 24h. O relatório consolida dados do Command Center, Reports, Narrative Radar, Desinformação, Fraudes, Cyber Threats, Ameaças, Atores, Evidências, Blacklist, Importações e Auditoria.
             </p>
-          </section>
-          <section className="grid gap-4 md:grid-cols-3">
-            <ReportBlock title="Principais riscos" value={`${critical.length} críticos/altos`} />
-            <ReportBlock title="Ações pendentes" value={`${pending.length}`} />
-            <ReportBlock title="Prioridade do dia" value="Triar reports novos" />
-          </section>
-          <section>
-            <h2 className="font-display text-xl font-semibold">Incidentes prioritários</h2>
-            <div className="mt-3 space-y-3">
-              {critical.map((incident) => (
-                <div key={incident.id} className="rounded-md border border-atlas-border bg-white/5 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-medium">{incident.title}</p>
-                    <RiskBadge level={incident.riskLevel} score={incident.riskScore} />
-                  </div>
-                  <p className="mt-2 text-sm text-atlas-muted">{incident.recommendedAction}</p>
-                  <div className="mt-2 flex gap-2">
-                    <Badge>{incident.category}</Badge>
-                    <Badge variant={incident.threatLevel >= 4 ? "critical" : "muted"}>Threat {incident.threatLevel}</Badge>
-                  </div>
-                </div>
-              ))}
+            <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+              <ReportBlock title="Reports totais" value={allIncidents.length} />
+              <ReportBlock title="Incidentes abertos" value={analytics.kpis.openIncidents} />
+              <ReportBlock title="Críticos/altos" value={critical.length} />
+              <ReportBlock title="Evidências" value={state.evidences.length} />
+              <ReportBlock title="Itens blacklist" value={state.blacklist.length} />
+              <ReportBlock title="Atores/páginas" value={state.actors.length} />
+              <ReportBlock title="Narrativas" value={state.narratives.length} />
+              <ReportBlock title="Alertas" value={state.alerts.length} />
+              <ReportBlock title="Importações" value={state.imports.length} />
+              <ReportBlock title="Auditoria" value={state.auditLogs.length} />
             </div>
           </section>
+
           <section>
-            <h2 className="font-display text-xl font-semibold">Limitação metodológica</h2>
-            <p className="mt-2 text-sm leading-6 text-atlas-muted">
-              O briefing não usa métricas imaginárias, não apresenta inferências como fatos e não envia alertas reais sem configuração explícita.
+            <SectionTitle title="KPIs por aba operacional" />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <ModuleSummary
+                title="Command Center"
+                description="Visão consolidada geral do histórico."
+                incidents={allIncidents}
+                extra={`${formatNumber(analytics.kpis.averageRisk)} risco médio · ${formatNumber(analytics.kpis.maxRisk)} risco máximo`}
+              />
+              <ModuleSummary
+                title="Reports"
+                description="Todos os reports cadastrados na plataforma."
+                incidents={allIncidents}
+                extra={`${formatNumber(totalReach(allIncidents))} alcance estimado somado`}
+              />
+              {modules.map((module) => (
+                <ModuleSummary
+                  key={module.title}
+                  title={module.title}
+                  description={module.description}
+                  incidents={allIncidents.filter(module.predicate)}
+                />
+              ))}
+              <ModuleSummary
+                title="Narrative Radar"
+                description="Narrativas cadastradas, recorrentes ou em crescimento."
+                incidents={allIncidents.filter((incident) => incident.relatedNarrativeIds.length > 0 || incident.category === "Narrativa negativa")}
+                extra={`${state.narratives.length} narrativas registradas`}
+              />
+              <ModuleSummary
+                title="Atores e Páginas"
+                description="Perfis, páginas, autores e amplificadores registrados."
+                incidents={allIncidents.filter((incident) => incident.relatedActorIds.length > 0)}
+                extra={`${state.actors.length} atores/páginas cadastrados`}
+              />
+              <ModuleSummary
+                title="Evidências"
+                description="Arquivos, links, prints, documentos e observações de apoio."
+                incidents={allIncidents.filter((incident) => state.evidences.some((evidence) => evidence.incidentId === incident.id))}
+                extra={`${state.evidences.length} evidências registradas`}
+              />
+            </div>
+          </section>
+
+          <section>
+            <SectionTitle title="Páginas, perfis e fontes mencionadas" />
+            <div className="overflow-x-auto rounded-md border border-atlas-border">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead className="bg-white/5 text-xs uppercase text-atlas-muted">
+                  <tr>
+                    <th className="px-3 py-3">Página/perfil/fonte</th>
+                    <th className="px-3 py-3">Reports</th>
+                    <th className="px-3 py-3">Alcance</th>
+                    <th className="px-3 py-3">Risco máx.</th>
+                    <th className="px-3 py-3">Plataformas</th>
+                    <th className="px-3 py-3">Categorias</th>
+                    <th className="px-3 py-3">Último registro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageGroups.length ? (
+                    pageGroups.map((page) => (
+                      <tr key={page.name} className="border-t border-atlas-border">
+                        <td className="px-3 py-3 font-medium text-atlas-text">{page.name}</td>
+                        <td className="px-3 py-3">{page.reports}</td>
+                        <td className="px-3 py-3">{formatNumber(page.reach)}</td>
+                        <td className="px-3 py-3"><RiskBadge level={page.riskLevel} score={page.maxRisk} /></td>
+                        <td className="px-3 py-3 text-atlas-muted">{page.platforms.join(", ") || "Não disponível"}</td>
+                        <td className="px-3 py-3 text-atlas-muted">{page.categories.join(", ") || "Não disponível"}</td>
+                        <td className="px-3 py-3">{formatDateTime(page.latest)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-3 py-8 text-center text-atlas-muted" colSpan={7}>Nenhuma página registrada.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <SectionTitle title="Reports registrados" />
+            <div className="space-y-3">
+              {allIncidents.length ? (
+                allIncidents.map((incident) => <IncidentReportCard key={incident.id} incident={incident} />)
+              ) : (
+                <EmptyText>Nenhum report registrado.</EmptyText>
+              )}
+            </div>
+          </section>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <ListPanel title="Narrativas" empty="Nenhuma narrativa registrada.">
+              {state.narratives.map((narrative) => (
+                <CompactItem
+                  key={narrative.id}
+                  title={narrative.name}
+                  subtitle={`${narrative.status} · ${narrative.polarity} · volume ${narrative.volume}`}
+                  badge={<RiskBadge level={riskLevelFromScore(narrative.riskScore)} score={narrative.riskScore} />}
+                />
+              ))}
+            </ListPanel>
+
+            <ListPanel title="Atores e páginas" empty="Nenhum ator ou página registrado.">
+              {state.actors.map((actor) => (
+                <CompactItem
+                  key={actor.id}
+                  title={actor.name}
+                  subtitle={`${actor.platform || "Plataforma não informada"} · ${actor.type} · ${formatFollowers(actor)}`}
+                  badge={<RiskBadge level={riskLevelFromScore(actor.riskScore)} score={actor.riskScore} />}
+                />
+              ))}
+            </ListPanel>
+
+            <ListPanel title="Evidências" empty="Nenhuma evidência registrada.">
+              {state.evidences.map((evidence) => (
+                <CompactItem
+                  key={evidence.id}
+                  title={evidence.description}
+                  subtitle={`${evidence.type} · ${evidence.source || evidence.url || "Fonte não informada"} · ${formatDateTime(evidence.collectedAt)}`}
+                  badge={<Badge variant="muted">{evidence.integrity}</Badge>}
+                />
+              ))}
+            </ListPanel>
+
+            <ListPanel title="Blacklist" empty="Nenhum item de blacklist registrado.">
+              {state.blacklist.map((entry) => (
+                <CompactItem
+                  key={entry.id}
+                  title={entry.value}
+                  subtitle={`${entry.kind} · ${entry.reason || "Sem motivo informado"} · atualizado em ${formatDateTime(entry.updatedAt)}`}
+                  badge={<Badge variant="muted">{entry.status}</Badge>}
+                />
+              ))}
+            </ListPanel>
+          </section>
+
+          <section>
+            <SectionTitle title="Limitação metodológica" />
+            <p className="text-sm leading-6 text-atlas-muted">
+              O relatório usa apenas dados cadastrados, importados ou coletados na plataforma. Métricas ausentes permanecem como “Não disponível”; inferências analíticas não são apresentadas como fato comprovado.
             </p>
           </section>
         </CardContent>
@@ -105,11 +290,171 @@ export function ReportsView() {
   );
 }
 
-function ReportBlock({ title, value }: { title: string; value: string }) {
+function ReportBlock({ title, value }: { title: string; value: string | number }) {
   return (
     <div className="rounded-md border border-atlas-border bg-white/5 p-4">
       <p className="text-xs uppercase text-atlas-muted">{title}</p>
       <p className="mt-2 font-display text-xl font-semibold">{value}</p>
     </div>
   );
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return <h2 className="font-display text-xl font-semibold text-atlas-text">{title}</h2>;
+}
+
+function ModuleSummary({
+  title,
+  description,
+  incidents,
+  extra
+}: {
+  title: string;
+  description: string;
+  incidents: Incident[];
+  extra?: string;
+}) {
+  const criticalOrHigh = incidents.filter((incident) => incident.riskLevel === "Crítico" || incident.riskLevel === "Alto").length;
+  const open = incidents.filter((incident) => !["Resolvido", "Arquivado", "Falso positivo"].includes(incident.status)).length;
+  return (
+    <div className="rounded-md border border-atlas-border bg-white/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-semibold text-atlas-text">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-atlas-muted">{description}</p>
+        </div>
+        <Badge>{incidents.length} reports</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <ReportBlock title="Abertos" value={open} />
+        <ReportBlock title="Críticos/altos" value={criticalOrHigh} />
+        <ReportBlock title="Risco médio" value={averageRisk(incidents)} />
+      </div>
+      {extra ? <p className="mt-3 text-sm text-atlas-muted">{extra}</p> : null}
+    </div>
+  );
+}
+
+function IncidentReportCard({ incident }: { incident: Incident }) {
+  const page = incident.authorName || incident.authorHandle || incident.domain || incident.platform || "Não disponível";
+  return (
+    <div className="rounded-md border border-atlas-border bg-white/5 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-semibold text-atlas-text">{page}</h3>
+          <p className="mt-1 text-sm leading-6 text-atlas-muted">{incident.summary || incident.content || "Sem resumo informado."}</p>
+        </div>
+        <RiskBadge level={incident.riskLevel} score={incident.riskScore} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Badge>{incident.category}</Badge>
+        <Badge variant="muted">{incident.status}</Badge>
+        <Badge variant="muted">{incident.platform || "Plataforma não informada"}</Badge>
+        <Badge variant={incident.threatLevel >= 4 ? "critical" : "muted"}>Threat {incident.threatLevel}</Badge>
+      </div>
+      <div className="mt-3 grid gap-3 text-sm md:grid-cols-3">
+        <InfoLine label="O que disseram" value={incident.content || incident.summary || "Não disponível"} />
+        <InfoLine label="Observação" value={incident.analystNotes || "Sem observação"} />
+        <InfoLine label="Alcance estimado" value={incident.reachValue ? formatNumber(incident.reachValue) : "Não disponível"} />
+      </div>
+    </div>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs uppercase text-atlas-muted">{label}</p>
+      <p className="mt-1 text-atlas-text">{value}</p>
+    </div>
+  );
+}
+
+function ListPanel({ title, empty, children }: { title: string; empty: string; children: React.ReactNode[] }) {
+  return (
+    <div className="rounded-md border border-atlas-border bg-white/5 p-4">
+      <h3 className="font-display text-lg font-semibold text-atlas-text">{title}</h3>
+      <div className="mt-3 space-y-3">
+        {children.length ? children : <EmptyText>{empty}</EmptyText>}
+      </div>
+    </div>
+  );
+}
+
+function CompactItem({ title, subtitle, badge }: { title: string; subtitle: string; badge: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-md border border-atlas-border bg-black/10 p-3">
+      <div>
+        <p className="font-medium text-atlas-text">{title}</p>
+        <p className="mt-1 text-sm leading-5 text-atlas-muted">{subtitle}</p>
+      </div>
+      {badge}
+    </div>
+  );
+}
+
+function EmptyText({ children }: { children: string }) {
+  return <p className="text-sm leading-6 text-atlas-muted">{children}</p>;
+}
+
+function buildPageGroups(incidents: Incident[]): PageGroup[] {
+  const groups = new Map<string, Incident[]>();
+  incidents.forEach((incident) => {
+    const name = incident.authorName || incident.authorHandle || incident.domain || incident.platform || "Não disponível";
+    groups.set(name, [...(groups.get(name) ?? []), incident]);
+  });
+
+  return Array.from(groups.entries())
+    .map(([name, group]) => {
+      const maxRisk = Math.max(...group.map((incident) => incident.riskScore), 0);
+      return {
+        name,
+        reports: group.length,
+        reach: totalReach(group),
+        platforms: unique(group.map((incident) => incident.platform)),
+        categories: unique(group.map((incident) => incident.category)),
+        latest: group.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]?.updatedAt ?? "",
+        maxRisk,
+        riskLevel: riskLevelFromScore(maxRisk)
+      };
+    })
+    .sort((a, b) => b.reports - a.reports || b.maxRisk - a.maxRisk);
+}
+
+function totalReach(incidents: Incident[]): number {
+  return incidents.reduce((sum, incident) => sum + (incident.reachValue ?? 0), 0);
+}
+
+function averageRisk(incidents: Incident[]): number {
+  if (!incidents.length) return 0;
+  return Math.round(incidents.reduce((sum, incident) => sum + incident.riskScore, 0) / incidents.length);
+}
+
+function riskLevelFromScore(score: number): RiskLevel {
+  if (score <= 20) return "Informativo";
+  if (score <= 40) return "Baixo";
+  if (score <= 60) return "Moderado";
+  if (score <= 80) return "Alto";
+  return "Crítico";
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, 6);
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatFollowers(actor: Actor): string {
+  return actor.followers ? `${formatNumber(actor.followers)} seguidores` : "Seguidores não informados";
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
