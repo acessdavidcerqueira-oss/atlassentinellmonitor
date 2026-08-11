@@ -4,6 +4,7 @@ import { Providers } from "@/app/providers";
 import { AppShell } from "@/components/layout/app-shell";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://atlascybersecurity.org"),
   title: "ATLAS SENTINEL | Executive CTI",
   description: "Executive CTI & Digital Threat Intelligence command center",
   icons: {
@@ -13,6 +14,28 @@ export const metadata: Metadata = {
     ],
     shortcut: "/favicon.ico",
     apple: "/favicon.png"
+  },
+  openGraph: {
+    title: "ATLAS SENTINEL | Executive CTI",
+    description: "Executive CTI & Digital Threat Intelligence command center",
+    url: "https://atlascybersecurity.org",
+    siteName: "Atlas Sentinel",
+    images: [
+      {
+        url: "/atlas-sentinel-og.png",
+        width: 1200,
+        height: 630,
+        alt: "Atlas Sentinel"
+      }
+    ],
+    locale: "pt_BR",
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ATLAS SENTINEL | Executive CTI",
+    description: "Executive CTI & Digital Threat Intelligence command center",
+    images: ["/atlas-sentinel-og.png"]
   }
 };
 
