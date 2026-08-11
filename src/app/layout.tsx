@@ -10,10 +10,11 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico" },
-      { url: "/favicon.png", type: "image/png" }
+      { url: "/favicon.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" }
     ],
     shortcut: "/favicon.ico",
-    apple: "/favicon.png"
+    apple: [{ url: "/apple-touch-icon.png", sizes: "512x512", type: "image/png" }]
   },
   openGraph: {
     title: "ATLAS SENTINEL | Executive CTI",
@@ -22,7 +23,13 @@ export const metadata: Metadata = {
     siteName: "Atlas Sentinel",
     images: [
       {
-        url: "/atlas-sentinel-og.png",
+        url: "/atlas-sentinel-share-square.png",
+        width: 1200,
+        height: 1200,
+        alt: "Atlas Sentinel"
+      },
+      {
+        url: "/atlas-sentinel-share-card.png",
         width: 1200,
         height: 630,
         alt: "Atlas Sentinel"
@@ -35,7 +42,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "ATLAS SENTINEL | Executive CTI",
     description: "Executive CTI & Digital Threat Intelligence command center",
-    images: ["/atlas-sentinel-og.png"]
+    images: ["/atlas-sentinel-share-card.png"]
   }
 };
 
