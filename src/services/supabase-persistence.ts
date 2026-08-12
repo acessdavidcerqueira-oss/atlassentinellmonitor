@@ -44,6 +44,7 @@ export async function loadAtlasStateFromSupabase(user: DemoUser): Promise<AtlasS
   const supabase = getSupabaseClientOrThrow();
   const [
     monitoredEntities,
+    reportIncidents,
     incidents,
     evidences,
     actors,
@@ -54,6 +55,7 @@ export async function loadAtlasStateFromSupabase(user: DemoUser): Promise<AtlasS
     blacklist
   ] = await Promise.all([
     loadPayloads<MonitoredEntity>(supabase, "monitored_entities", user),
+    loadReportIncidents(supabase, user),
     loadPayloads<Incident>(supabase, "incidents", user),
     loadPayloads<Evidence>(supabase, "evidences", user),
     loadPayloads<Actor>(supabase, "actors", user),
@@ -71,7 +73,7 @@ export async function loadAtlasStateFromSupabase(user: DemoUser): Promise<AtlasS
     ...fallback,
     monitoredEntities: entities,
     activeMonitoredEntityId: entities[0]?.id ?? fallback.activeMonitoredEntityId,
-    incidents,
+    incidents: mergeIncidents(incidents, reportIncidents),
     evidences,
     actors,
     narratives,
@@ -119,6 +121,43 @@ async function loadPayloads<T extends { id: string }>(
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((row) => row.payload).filter(hasClientId) as T[];
+}
+
+async function loadReportIncidents(supabase: SupabaseClient, user: DemoUser): Promise<Incident[]> {
+  let query = supabase
+    .from("reports")
+    .select("payload, content, created_at")
+    .order("created_at", { ascending: false });
+
+  if (user.role !== "Super Admin") {
+    query = query.eq("user_id", user.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data ?? [])
+    .flatMap((row) => [row.payload, row.content])
+    .filter(hasClientId)
+    .filter(isIncidentPayload) as Incident[];
+}
+
+function mergeIncidents(primary: Incident[], fallback: Incident[]): Incident[] {
+  const byId = new Map<string, Incident>();
+  [...fallback, ...primary].forEach((incident) => {
+    if (!incident.id) return;
+    byId.set(incident.id, incident);
+  });
+  return Array.from(byId.values()).sort((a, b) => {
+    const bTime = new Date(b.createdAt || b.collectedAt).getTime();
+    const aTime = new Date(a.createdAt || a.collectedAt).getTime();
+    return bTime - aTime;
+  });
+}
+
+function isIncidentPayload(payload: { id: string }): payload is Incident {
+  const candidate = payload as Partial<Incident>;
+  return typeof candidate.title === "string" && Array.isArray(candidate.keywords);
 }
 
 async function insertRows(supabase: SupabaseClient, table: PersistableTable, rows: Record<string, unknown>[]) {

@@ -567,10 +567,13 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
     }
     case "importIncidents": {
       if (!canWrite(action.user)) return state;
-      const alerts = action.incidents.flatMap(evaluateIncidentAlerts);
+      const materialized = materializeIncidentBatch(action.incidents, state);
+      const alerts = materialized.incidents.flatMap(evaluateIncidentAlerts);
       return {
         ...state,
-        incidents: [...action.incidents, ...state.incidents],
+        incidents: [...materialized.incidents, ...state.incidents],
+        actors: materialized.actors,
+        narratives: materialized.narratives,
         alerts: [...alerts, ...state.alerts],
         imports: [action.report, ...state.imports],
         auditLogs: [
@@ -679,6 +682,22 @@ function backfillActorAndNarrativeReports(
   });
 
   return { incidents: nextIncidents, actors, narratives };
+}
+
+function materializeIncidentBatch(
+  incidents: Incident[],
+  state: Pick<AtlasState, "actors" | "narratives">
+): { incidents: Incident[]; actors: Actor[]; narratives: Narrative[] } {
+  let actors = state.actors;
+  let narratives = state.narratives;
+  const materializedIncidents = incidents.map((incident) => {
+    const derived = deriveEntitiesFromIncident(incident, { actors, narratives });
+    actors = derived.actors;
+    narratives = derived.narratives;
+    return derived.incident;
+  });
+
+  return { incidents: materializedIncidents, actors, narratives };
 }
 
 function upsertActorForIncident(incident: Incident, actors: Actor[]): { actors: Actor[]; actorId: string } {
