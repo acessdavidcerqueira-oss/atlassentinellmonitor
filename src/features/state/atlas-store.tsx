@@ -17,7 +17,7 @@ import type {
 } from "@/types/domain";
 import { buildDemoState } from "@/services/demo-data";
 import { evaluateIncidentAlerts } from "@/services/alerts";
-import { classifyRisk } from "@/services/risk";
+import { classifyRisk, defaultRiskFactors, emptyPhysicalThreatFlags } from "@/services/risk";
 import { createId } from "@/utils/id";
 import { isoNow } from "@/utils/date";
 import { toDomain } from "@/utils/text";
@@ -609,7 +609,9 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
 
 function normalizeState(state: AtlasState): AtlasState {
   const fallback = buildDemoState();
-  const incidents = Array.isArray(state?.incidents) ? state.incidents : [];
+  const incidents = Array.isArray(state?.incidents)
+    ? state.incidents.map(normalizeIncident)
+    : [];
   const evidences = backfillEvidenceReports(
     Array.isArray(state?.evidences) ? state.evidences : [],
     incidents
@@ -634,6 +636,71 @@ function normalizeState(state: AtlasState): AtlasState {
     blacklist: Array.isArray(state?.blacklist) ? state.blacklist : [],
     auditLogs: Array.isArray(state?.auditLogs) ? state.auditLogs : [],
     imports: Array.isArray(state?.imports) ? state.imports : []
+  };
+}
+
+function normalizeIncident(incident: Incident): Incident {
+  const fallback = buildDemoState();
+  const now = isoNow();
+  const riskScore = Number.isFinite(incident.riskScore) ? incident.riskScore : 25;
+  const physicalThreatScore = Number.isFinite(incident.physicalThreatScore) ? incident.physicalThreatScore : 0;
+
+  return {
+    ...incident,
+    id: incident.id || createId("inc"),
+    monitoredEntityId: incident.monitoredEntityId || fallback.activeMonitoredEntityId,
+    collectedAt: incident.collectedAt || incident.createdAt || now,
+    publishedAt: incident.publishedAt || incident.collectedAt || incident.createdAt || now,
+    title: incident.title || `Report: ${incident.domain || incident.authorName || "sem título"}`,
+    summary: incident.summary || incident.content || "",
+    content: incident.content || incident.summary || "",
+    url: incident.url || "",
+    domain: incident.domain || toDomain(incident.url) || incident.authorName || "Não disponível",
+    platform: incident.platform || "Não informado",
+    authorName: incident.authorName || incident.domain || incident.title || "Não informado",
+    authorHandle: incident.authorHandle || "",
+    authorUrl: incident.authorUrl || incident.url || "",
+    actorType: incident.actorType || "Origem indeterminada",
+    category: incident.category || "Outro",
+    subcategory: incident.subcategory || "",
+    verificationStatus: incident.verificationStatus || "Não analisado",
+    sentiment: incident.sentiment || "não disponível",
+    provenanceType: incident.provenanceType || "FATO_COLETADO",
+    confidenceLevel: incident.confidenceLevel || "medium",
+    riskScore,
+    riskLevel: incident.riskLevel || classifyRisk(riskScore),
+    riskFactors: incident.riskFactors || defaultRiskFactors(riskScore),
+    threatLevel: incident.threatLevel || 1,
+    physicalThreatScore,
+    physicalThreatFactors:
+      incident.physicalThreatFactors || {
+        declaredIntent: 0,
+        targetSpecificity: 0,
+        apparentCapability: 0,
+        proximityAccess: 0,
+        recurrenceEscalation: 0,
+        dataLocationExposure: 0
+      },
+    physicalThreatFlags: incident.physicalThreatFlags || emptyPhysicalThreatFlags(),
+    reachType: incident.reachType || "unavailable",
+    velocityScore: Number.isFinite(incident.velocityScore) ? incident.velocityScore : 20,
+    coordinationLevel: incident.coordinationLevel || "Não identificado",
+    target: incident.target || "Monitorado",
+    locationExposure: incident.locationExposure || "Não disponível",
+    status: incident.status || "Novo",
+    ownerTeam: incident.ownerTeam || "Atlas OSINT",
+    assignedTo: incident.assignedTo || "",
+    recommendedAction: incident.recommendedAction || "Revisar",
+    analystNotes: incident.analystNotes || "",
+    nextAction: incident.nextAction || "Revisar",
+    relatedActorIds: Array.isArray(incident.relatedActorIds) ? incident.relatedActorIds : [],
+    relatedNarrativeIds: Array.isArray(incident.relatedNarrativeIds) ? incident.relatedNarrativeIds : [],
+    relatedIncidentIds: Array.isArray(incident.relatedIncidentIds) ? incident.relatedIncidentIds : [],
+    indicators: Array.isArray(incident.indicators) ? incident.indicators : [],
+    keywords: Array.isArray(incident.keywords) ? incident.keywords : [],
+    createdAt: incident.createdAt || incident.collectedAt || now,
+    updatedAt: incident.updatedAt || incident.createdAt || incident.collectedAt || now,
+    deletedAt: incident.deletedAt ?? null
   };
 }
 
@@ -816,16 +883,18 @@ function upsertNarrativeForIncident(
 }
 
 function isActorReport(incident: Incident): boolean {
+  const keywords = incident.keywords ?? [];
+
   return (
-    incident.keywords.includes("atores") ||
-    incident.keywords.includes("influenciador") ||
-    incident.keywords.includes("pessoa exposta") ||
+    keywords.includes("atores") ||
+    keywords.includes("influenciador") ||
+    keywords.includes("pessoa exposta") ||
     (incident.ownerTeam === "Atlas OSINT" && ["Influenciador", "Pessoa exposta"].includes(incident.actorType))
   );
 }
 
 function isNarrativeReport(incident: Incident): boolean {
-  return incident.ownerTeam === "Comunicação" || incident.keywords.includes("narrativas") || incident.category === "Narrativa negativa";
+  return incident.ownerTeam === "Comunicação" || (incident.keywords ?? []).includes("narrativas") || incident.category === "Narrativa negativa";
 }
 
 function actorIdentityKey(incident: Incident): string {
@@ -1027,7 +1096,7 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const remoteState = await loadAtlasStateFromSupabase(currentUser);
+        const remoteState = normalizeState(await loadAtlasStateFromSupabase(currentUser));
         const localState = loadLocalStorageStateForMigration();
         const shouldMigrateLocal =
           localState &&

@@ -41,6 +41,7 @@ import {
 import { canWrite } from "@/features/auth/auth";
 import { formatDateTime } from "@/utils/date";
 import { useAuth } from "@/features/state/auth-store";
+import { cn } from "@/lib/utils";
 
 const palette = ["#79DFFF", "#48CFF2", "#FBBF24", "#FB7185", "#34D399", "#A78BFA", "#F97316"];
 const periods: Array<{ value: DashboardPeriod; label: string }> = [
@@ -59,20 +60,20 @@ export function CommandCenter() {
   const { kpis } = analytics;
 
   const kpiCards = [
-    { label: "Total de menções / reports", value: kpis.totalReports, icon: Gauge },
-    { label: "Incidentes abertos", value: kpis.openIncidents, icon: FileWarning },
-    { label: "Alertas críticos", value: kpis.criticalAlerts, icon: AlertTriangle, critical: kpis.criticalAlerts > 0 },
-    { label: "Conteúdos negativos", value: kpis.negative, icon: ShieldAlert },
-    { label: "Desinformações", value: kpis.disinformation, icon: Bot },
-    { label: "Fraudes detectadas", value: kpis.fraud, icon: Binary },
-    { label: "Perfis falsos ativos", value: kpis.fakeProfiles, icon: Users },
-    { label: "Incidentes cibernéticos", value: kpis.cyber, icon: Binary },
-    { label: "Ameaças à pessoa", value: kpis.peopleThreats, icon: AlertCircle },
-    { label: "Atores / páginas", value: kpis.actors, icon: Users },
-    { label: "Evidências", value: kpis.evidences, icon: Database },
-    { label: "Itens em blacklist", value: kpis.blacklist, icon: ShieldAlert },
-    { label: "Mudança de risco 24h", value: signed(kpis.riskDelta24h), icon: Activity, delta: kpis.riskDelta24h },
-    { label: "Mudança de risco 7d", value: signed(kpis.riskDelta7d), icon: Activity, delta: kpis.riskDelta7d }
+    { label: "Total de menções / reports", value: kpis.totalReports, icon: Gauge, href: `${state.viewBasePath}/reports` },
+    { label: "Incidentes abertos", value: kpis.openIncidents, icon: FileWarning, href: `${state.viewBasePath}/incidents` },
+    { label: "Alertas críticos", value: kpis.criticalAlerts, icon: AlertTriangle, critical: kpis.criticalAlerts > 0, href: `${state.viewBasePath}/incidents` },
+    { label: "Conteúdos negativos", value: kpis.negative, icon: ShieldAlert, href: `${state.viewBasePath}/reports` },
+    { label: "Desinformações", value: kpis.disinformation, icon: Bot, href: `${state.viewBasePath}/desinformacao` },
+    { label: "Fraudes detectadas", value: kpis.fraud, icon: Binary, href: `${state.viewBasePath}/fraudes` },
+    { label: "Perfis falsos ativos", value: kpis.fakeProfiles, icon: Users, href: `${state.viewBasePath}/fraudes` },
+    { label: "Incidentes cibernéticos", value: kpis.cyber, icon: Binary, href: `${state.viewBasePath}/cti` },
+    { label: "Ameaças à pessoa", value: kpis.peopleThreats, icon: AlertCircle, href: `${state.viewBasePath}/ameacas` },
+    { label: "Atores / páginas", value: kpis.actors, icon: Users, href: `${state.viewBasePath}/atores` },
+    { label: "Evidências", value: kpis.evidences, icon: Database, href: `${state.viewBasePath}/evidencias` },
+    { label: "Itens em blacklist", value: kpis.blacklist, icon: ShieldAlert, href: `${state.viewBasePath}/blacklist` },
+    { label: "Mudança de risco 24h", value: signed(kpis.riskDelta24h), icon: Activity, delta: kpis.riskDelta24h, href: `${state.viewBasePath}/reports` },
+    { label: "Mudança de risco 7d", value: signed(kpis.riskDelta7d), icon: Activity, delta: kpis.riskDelta7d, href: `${state.viewBasePath}/reports` }
   ];
 
   return (
@@ -122,6 +123,7 @@ export function CommandCenter() {
           )}
           items={analytics.incidents.filter((incident) => ["Desinformação", "Conteúdo enganoso", "Conteúdo fora de contexto", "Conteúdo manipulado", "Deepfake", "Narrativa negativa"].includes(incident.category)).slice(0, 3)}
           basePath={state.viewBasePath}
+          href={`${state.viewBasePath}/desinformacao`}
         />
         <SectionInsightCard
           title="Fraudes"
@@ -132,6 +134,7 @@ export function CommandCenter() {
           )}
           items={analytics.incidents.filter((incident) => ["Perfil falso", "Impersonação", "Fraude", "Golpe financeiro"].includes(incident.category)).slice(0, 3)}
           basePath={state.viewBasePath}
+          href={`${state.viewBasePath}/fraudes`}
         />
         <SectionInsightCard
           title="Cyber"
@@ -142,6 +145,7 @@ export function CommandCenter() {
           )}
           items={analytics.incidents.filter((incident) => ["Phishing", "Domínio fraudulento", "Malware", "Vazamento de credencial", "Ataque contra conta", "Ataque contra site", "Incidente cibernético", "Exposição de dados"].includes(incident.category)).slice(0, 3)}
           basePath={state.viewBasePath}
+          href={`${state.viewBasePath}/cti`}
         />
         <SectionInsightCard
           title="Ameaças"
@@ -152,6 +156,7 @@ export function CommandCenter() {
           )}
           items={analytics.incidents.filter((incident) => ["Exposição de agenda", "Exposição de localização", "Assédio", "Ameaça física", "Incitação à violência"].includes(incident.category) || incident.threatLevel >= 2).slice(0, 3)}
           basePath={state.viewBasePath}
+          href={`${state.viewBasePath}/ameacas`}
         />
       </section>
 
@@ -168,6 +173,7 @@ export function CommandCenter() {
             value: actor.reports,
             href: `${state.viewBasePath}/atores`
           }))}
+          href={`${state.viewBasePath}/atores`}
         />
         <SectionInsightCard
           title="Narrativas"
@@ -181,6 +187,7 @@ export function CommandCenter() {
             value: narrative.volume,
             href: `${state.viewBasePath}/narrativas`
           }))}
+          href={`${state.viewBasePath}/narrativas`}
         />
         <SectionInsightCard
           title="Evidências"
@@ -193,6 +200,7 @@ export function CommandCenter() {
             subtitle: `${evidence.type} · ${evidence.source}`,
             href: `${state.viewBasePath}/incidents/${evidence.incidentId}`
           }))}
+          href={`${state.viewBasePath}/evidencias`}
         />
         <SectionInsightCard
           title="Blacklist"
@@ -205,6 +213,7 @@ export function CommandCenter() {
             subtitle: `${entry.kind} · ${entry.status}`,
             href: `${state.viewBasePath}/blacklist`
           }))}
+          href={`${state.viewBasePath}/blacklist`}
         />
       </section>
 
@@ -349,19 +358,23 @@ function MetricCard({
   label,
   value,
   critical = false,
-  delta
+  delta,
+  href
 }: {
   icon: typeof Gauge;
   label: string;
   value: string | number;
   critical?: boolean;
   delta?: number;
+  href?: string;
 }) {
   const deltaTone =
     delta === undefined ? "" : delta > 0 ? "text-red-200" : delta < 0 ? "text-emerald-200" : "text-atlas-muted";
-
-  return (
-    <Card className={critical ? "animate-critical-pulse border-red-400/40" : ""}>
+  const content = (
+    <Card className={cn(
+      critical ? "animate-critical-pulse border-red-400/40" : "",
+      href ? "h-full transition hover:-translate-y-0.5 hover:border-atlas-action/60 hover:bg-atlas-card" : ""
+    )}>
       <CardContent className="flex min-h-[96px] items-center justify-between gap-3 p-4">
         <div className="min-w-0">
           <p className="text-[0.68rem] uppercase leading-4 text-atlas-muted">{label}</p>
@@ -370,6 +383,14 @@ function MetricCard({
         <Icon className={critical ? "h-6 w-6 shrink-0 text-red-200" : "h-6 w-6 shrink-0 text-atlas-action"} />
       </CardContent>
     </Card>
+  );
+
+  if (!href) return content;
+
+  return (
+    <Link href={href} className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action/70">
+      {content}
+    </Link>
   );
 }
 
@@ -397,7 +418,8 @@ function SectionInsightCard({
   data,
   items,
   summaryItems,
-  basePath = ""
+  basePath = "",
+  href
 }: {
   title: string;
   icon: typeof Gauge;
@@ -406,18 +428,28 @@ function SectionInsightCard({
   items?: Array<{ id: string; title: string; category: string; riskScore: number; riskLevel: RiskLevel; updatedAt: string }>;
   summaryItems?: Array<{ id: string; title: string; subtitle: string; value?: number; href: string }>;
   basePath?: string;
+  href?: string;
 }) {
   const normalizedData = compactCounts(data);
-
-  return (
-    <Card>
+  const content = (
+    <Card className={cn(
+      "relative h-full",
+      href ? "transition hover:-translate-y-0.5 hover:border-atlas-action/60 hover:bg-atlas-card" : ""
+    )}>
+      {href ? (
+        <Link
+          href={href}
+          className="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-atlas-action/70"
+          aria-label={`Abrir aba ${title}`}
+        />
+      ) : null}
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
+        <div className="relative z-10 flex items-center justify-between gap-3">
           <CardTitle>{title}</CardTitle>
           <Icon className="h-5 w-5 text-atlas-action" />
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="relative z-10 space-y-4">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-xs uppercase text-atlas-muted">Registros no período</p>
@@ -434,7 +466,7 @@ function SectionInsightCard({
                 <Link
                   key={item.id}
                   href={`${basePath}/incidents/${item.id}`}
-                  className="block rounded-md border border-atlas-border bg-white/5 p-2 transition hover:bg-white/8"
+                  className="relative z-20 block rounded-md border border-atlas-border bg-white/5 p-2 transition hover:bg-white/8"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -450,7 +482,7 @@ function SectionInsightCard({
                   <Link
                     key={item.id}
                     href={item.href}
-                    className="flex items-center justify-between gap-3 rounded-md border border-atlas-border bg-white/5 p-2 text-sm transition hover:bg-white/8"
+                    className="relative z-20 flex items-center justify-between gap-3 rounded-md border border-atlas-border bg-white/5 p-2 text-sm transition hover:bg-white/8"
                   >
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-atlas-text">{item.title}</span>
@@ -464,6 +496,8 @@ function SectionInsightCard({
       </CardContent>
     </Card>
   );
+
+  return content;
 }
 
 function NarrativesPanel({

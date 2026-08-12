@@ -16,6 +16,10 @@ import type {
 } from "@/types/domain";
 import type { DemoUser } from "@/features/auth/auth";
 import { buildDemoState } from "@/services/demo-data";
+import { classifyRisk, defaultRiskFactors, emptyPhysicalThreatFlags } from "@/services/risk";
+import { createId } from "@/utils/id";
+import { isoNow } from "@/utils/date";
+import { toDomain } from "@/utils/text";
 
 const tables = [
   "reports",
@@ -138,8 +142,8 @@ async function loadReportIncidents(supabase: SupabaseClient, user: DemoUser): Pr
 
   return (data ?? [])
     .flatMap((row) => [row.payload, row.content])
-    .filter(hasClientId)
-    .filter(isIncidentPayload) as Incident[];
+    .map(recoverIncidentPayload)
+    .filter((incident): incident is Incident => Boolean(incident));
 }
 
 function mergeIncidents(primary: Incident[], fallback: Incident[]): Incident[] {
@@ -155,9 +159,123 @@ function mergeIncidents(primary: Incident[], fallback: Incident[]): Incident[] {
   });
 }
 
-function isIncidentPayload(payload: { id: string }): payload is Incident {
-  const candidate = payload as Partial<Incident>;
-  return typeof candidate.title === "string" && Array.isArray(candidate.keywords);
+function recoverIncidentPayload(payload: unknown): Incident | null {
+  if (!payload || typeof payload !== "object") return null;
+  const candidate = payload as Partial<Incident> & Record<string, unknown>;
+  const title =
+    typeof candidate.title === "string"
+      ? candidate.title
+      : typeof candidate.name === "string"
+        ? candidate.name
+        : typeof candidate.domain === "string"
+          ? `Report: ${candidate.domain}`
+          : "";
+
+  if (!title) return null;
+
+  const now = isoNow();
+  const riskScore = finiteNumber(candidate.riskScore, finiteNumber(candidate.risk_score, 25));
+  const physicalThreatScore = finiteNumber(
+    candidate.physicalThreatScore,
+    finiteNumber(candidate.physical_threat_score, 0)
+  );
+  const url = stringValue(candidate.url);
+  const domain = stringValue(candidate.domain) || toDomain(url) || "Não disponível";
+  const summary = stringValue(candidate.summary) || stringValue(candidate.content);
+  const createdAt = stringValue(candidate.createdAt) || stringValue(candidate.created_at) || now;
+  const collectedAt = stringValue(candidate.collectedAt) || stringValue(candidate.collected_at) || createdAt;
+
+  return {
+    id: stringValue(candidate.id) || stringValue(candidate.client_id) || createId("inc"),
+    monitoredEntityId: stringValue(candidate.monitoredEntityId) || stringValue(candidate.monitored_entity_client_id) || "entity_flavio_bolsonaro",
+    collectedAt,
+    publishedAt: stringValue(candidate.publishedAt) || stringValue(candidate.published_at) || collectedAt,
+    title,
+    summary,
+    content: stringValue(candidate.content) || summary,
+    url,
+    domain,
+    platform: stringValue(candidate.platform) || "Não informado",
+    authorName: stringValue(candidate.authorName) || stringValue(candidate.author_name) || domain,
+    authorHandle: stringValue(candidate.authorHandle) || stringValue(candidate.author_handle),
+    authorUrl: stringValue(candidate.authorUrl) || stringValue(candidate.author_url) || url,
+    actorType: stringValue(candidate.actorType) || stringValue(candidate.actor_type) || "Origem indeterminada",
+    category: stringValue(candidate.category) || "Outro",
+    subcategory: stringValue(candidate.subcategory),
+    verificationStatus: stringValue(candidate.verificationStatus) || stringValue(candidate.verification_status) || "Não analisado",
+    sentiment: stringValue(candidate.sentiment) || "não disponível",
+    provenanceType: stringValue(candidate.provenanceType) || stringValue(candidate.provenance_type) || "FATO_COLETADO",
+    confidenceLevel: stringValue(candidate.confidenceLevel) || stringValue(candidate.confidence_level) || "medium",
+    riskScore,
+    riskLevel: stringValue(candidate.riskLevel) || stringValue(candidate.risk_level) || classifyRisk(riskScore),
+    riskFactors:
+      typeof candidate.riskFactors === "object" && candidate.riskFactors
+        ? candidate.riskFactors
+        : defaultRiskFactors(riskScore),
+    threatLevel: finiteNumber(candidate.threatLevel, finiteNumber(candidate.threat_level, 1)),
+    physicalThreatScore,
+    physicalThreatFactors:
+      typeof candidate.physicalThreatFactors === "object" && candidate.physicalThreatFactors
+        ? candidate.physicalThreatFactors
+        : {
+            declaredIntent: 0,
+            targetSpecificity: 0,
+            apparentCapability: 0,
+            proximityAccess: 0,
+            recurrenceEscalation: 0,
+            dataLocationExposure: 0
+          },
+    physicalThreatFlags:
+      typeof candidate.physicalThreatFlags === "object" && candidate.physicalThreatFlags
+        ? candidate.physicalThreatFlags
+        : emptyPhysicalThreatFlags(),
+    reachValue: optionalNumber(candidate.reachValue ?? candidate.reach_value),
+    reachType: stringValue(candidate.reachType) || stringValue(candidate.reach_type) || "unavailable",
+    engagementValue: optionalNumber(candidate.engagementValue ?? candidate.engagement_value),
+    velocityScore: finiteNumber(candidate.velocityScore, finiteNumber(candidate.velocity_score, 20)),
+    coordinationLevel: stringValue(candidate.coordinationLevel) || stringValue(candidate.coordination_level) || "Não identificado",
+    target: stringValue(candidate.target) || "Monitorado",
+    locationExposure: stringValue(candidate.locationExposure) || stringValue(candidate.location_exposure) || "Não disponível",
+    status: stringValue(candidate.status) || "Novo",
+    ownerTeam: stringValue(candidate.ownerTeam) || stringValue(candidate.owner_team) || ownerTeamFromCategory(stringValue(candidate.category)),
+    assignedTo: stringValue(candidate.assignedTo) || stringValue(candidate.assigned_to),
+    recommendedAction: stringValue(candidate.recommendedAction) || stringValue(candidate.recommended_action) || "Revisar",
+    analystNotes: stringValue(candidate.analystNotes) || stringValue(candidate.analyst_notes),
+    nextAction: stringValue(candidate.nextAction) || stringValue(candidate.next_action) || "Revisar",
+    dueAt: stringValue(candidate.dueAt) || stringValue(candidate.due_at) || undefined,
+    relatedActorIds: stringArray(candidate.relatedActorIds),
+    relatedNarrativeIds: stringArray(candidate.relatedNarrativeIds),
+    relatedIncidentIds: stringArray(candidate.relatedIncidentIds),
+    indicators: stringArray(candidate.indicators),
+    keywords: stringArray(candidate.keywords),
+    createdAt,
+    updatedAt: stringValue(candidate.updatedAt) || stringValue(candidate.updated_at) || createdAt,
+    deletedAt: stringValue(candidate.deletedAt) || stringValue(candidate.deleted_at) || null
+  } as Incident;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function ownerTeamFromCategory(category: string) {
+  if (category === "Narrativa negativa") return "Comunicação";
+  if (["Ameaça física", "Assédio", "Incitação à violência"].includes(category)) return "Segurança física";
+  if (["Phishing", "Malware", "Ataque contra conta", "Ataque contra site", "Incidente cibernético"].includes(category)) return "Elytron CTI";
+  if (["Fraude", "Perfil falso", "Impersonação"].includes(category)) return "Jurídico";
+  return "Atlas OSINT";
 }
 
 async function insertRows(supabase: SupabaseClient, table: PersistableTable, rows: Record<string, unknown>[]) {
