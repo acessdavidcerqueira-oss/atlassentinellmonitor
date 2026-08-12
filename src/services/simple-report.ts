@@ -440,6 +440,7 @@ export interface SimpleReportInput {
   evidenceFileName?: string;
   evidenceFileType?: string;
   evidenceFileSize?: number;
+  evidenceImagePreviewUrl?: string;
   evidenceVideoUrl?: string;
   threatCaseType?: ThreatCaseType;
 }

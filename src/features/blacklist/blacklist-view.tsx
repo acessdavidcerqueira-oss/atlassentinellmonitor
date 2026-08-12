@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ItemActions } from "@/components/ui/item-actions";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -42,11 +43,21 @@ const initialForm = {
   source: ""
 };
 
+interface BlacklistDraft {
+  value: string;
+  kind: BlacklistKind;
+  status: BlacklistStatus;
+  reason: string;
+  source: string;
+}
+
 export function BlacklistView() {
   const atlas = useAtlas();
   const { user } = useAuth();
   const mayWrite = !atlas.readOnly && canWrite(user);
   const [form, setForm] = useState(initialForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<BlacklistDraft>(initialForm);
   const [error, setError] = useState("");
 
   const entries = useMemo(
@@ -93,6 +104,59 @@ export function BlacklistView() {
   function updateStatus(entryId: string, status: BlacklistStatus) {
     if (!user || !mayWrite) return;
     atlas.updateBlacklistStatus(entryId, status, user);
+  }
+
+  function startEdit(entry: BlacklistEntry) {
+    setEditingId(entry.id);
+    setDraft({
+      value: entry.value,
+      kind: entry.kind,
+      status: entry.status,
+      reason: entry.reason,
+      source: entry.source
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft(initialForm);
+  }
+
+  function saveEdit(entryId: string) {
+    if (!user || !mayWrite) return;
+    const normalizedValue = normalizeBlacklistValue(draft.value);
+    if (!normalizedValue) {
+      setError("Informe um site ou link.");
+      return;
+    }
+    const duplicate = entries.some((entry) => entry.id !== entryId && entry.normalizedValue === normalizedValue);
+    if (duplicate) {
+      setError("Esse site ou link já está na blacklist.");
+      return;
+    }
+
+    atlas.updateBlacklistEntry(
+      entryId,
+      {
+        value: draft.value.trim(),
+        normalizedValue,
+        kind: draft.kind,
+        status: draft.status,
+        reason: draft.reason.trim(),
+        source: draft.source.trim()
+      },
+      user
+    );
+    setError("");
+    cancelEdit();
+  }
+
+  function deleteEntry(entry: BlacklistEntry) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir "${entry.value}" da blacklist?`);
+    if (!confirmed) return;
+    atlas.deleteBlacklistEntry(entry.id, user);
+    if (editingId === entry.id) cancelEdit();
   }
 
   return (
@@ -210,50 +274,121 @@ export function BlacklistView() {
                   <TableHead>Motivo</TableHead>
                   <TableHead>Origem</TableHead>
                   <TableHead>Atualizado</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {entries.length ? (
-                  entries.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-atlas-text">{entry.value}</p>
-                          <p className="text-xs text-atlas-muted">{entry.normalizedValue}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="muted">{entry.kind === "site" ? "Site" : "Link"}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {mayWrite ? (
-                          <>
+                  entries.map((entry) => {
+                    const isEditing = editingId === entry.id;
+
+                    return (
+                      <TableRow key={entry.id}>
+                        <TableCell>
+                          <div className="min-w-56">
+                            {isEditing ? (
+                              <Input
+                                value={draft.value}
+                                onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))}
+                                aria-label="Site ou link da blacklist"
+                              />
+                            ) : (
+                              <p className="font-medium text-atlas-text">{entry.value}</p>
+                            )}
+                            <p className="mt-1 text-xs text-atlas-muted">
+                              {isEditing ? normalizeBlacklistValue(draft.value) || "Normalização pendente" : entry.normalizedValue}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
                             <Select
-                              value={entry.status}
-                              onChange={(event) => updateStatus(entry.id, event.target.value as BlacklistStatus)}
+                              value={draft.kind}
+                              onChange={(event) => setDraft((current) => ({ ...current, kind: event.target.value as BlacklistKind }))}
+                              className="min-w-28"
                             >
-                              {statusOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
+                              <option value="site">Site</option>
+                              <option value="link">Link</option>
                             </Select>
-                            <div className="mt-2">
-                              <Badge variant={statusVariant[entry.status]}>{statusLabel(entry.status)}</Badge>
-                            </div>
-                          </>
-                        ) : (
-                          <Badge variant={statusVariant[entry.status]}>{statusLabel(entry.status)}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-xs text-sm text-atlas-muted">{entry.reason || "Não informado"}</TableCell>
-                      <TableCell>{entry.source || entry.createdBy}</TableCell>
-                      <TableCell>{formatDateTime(entry.updatedAt)}</TableCell>
-                    </TableRow>
-                  ))
+                          ) : (
+                            <Badge variant="muted">{entry.kind === "site" ? "Site" : "Link"}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {mayWrite ? (
+                            <>
+                              <Select
+                                value={isEditing ? draft.status : entry.status}
+                                onChange={(event) => {
+                                  const nextStatus = event.target.value as BlacklistStatus;
+                                  if (isEditing) {
+                                    setDraft((current) => ({ ...current, status: nextStatus }));
+                                  } else {
+                                    updateStatus(entry.id, nextStatus);
+                                  }
+                                }}
+                                className="min-w-40"
+                              >
+                                {statusOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                              <div className="mt-2">
+                                <Badge variant={statusVariant[isEditing ? draft.status : entry.status]}>{statusLabel(isEditing ? draft.status : entry.status)}</Badge>
+                              </div>
+                            </>
+                          ) : (
+                            <Badge variant={statusVariant[entry.status]}>{statusLabel(entry.status)}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs text-sm text-atlas-muted">
+                          {isEditing ? (
+                            <Textarea
+                              value={draft.reason}
+                              onChange={(event) => setDraft((current) => ({ ...current, reason: event.target.value }))}
+                              aria-label="Motivo da blacklist"
+                              className="min-w-56"
+                            />
+                          ) : (
+                            entry.reason || "Não informado"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Input
+                              value={draft.source}
+                              onChange={(event) => setDraft((current) => ({ ...current, source: event.target.value }))}
+                              aria-label="Origem da blacklist"
+                              className="min-w-40"
+                            />
+                          ) : (
+                            entry.source || entry.createdBy
+                          )}
+                        </TableCell>
+                        <TableCell>{formatDateTime(entry.updatedAt)}</TableCell>
+                        <TableCell>
+                          {mayWrite ? (
+                            <ItemActions
+                              isEditing={isEditing}
+                              onEdit={() => startEdit(entry)}
+                              onSave={() => saveEdit(entry.id)}
+                              onCancel={cancelEdit}
+                              onDelete={() => deleteEntry(entry)}
+                              editLabel="Editar item da blacklist"
+                              deleteLabel="Excluir item da blacklist"
+                            />
+                          ) : (
+                            <span className="text-xs text-atlas-muted">Somente leitura</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-atlas-muted">
+                    <TableCell colSpan={7} className="py-10 text-center text-sm text-atlas-muted">
                       Nenhum site ou link cadastrado.
                     </TableCell>
                   </TableRow>

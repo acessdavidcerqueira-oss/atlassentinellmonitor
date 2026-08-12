@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ReportActionButton } from "@/components/layout/report-action-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ItemActions } from "@/components/ui/item-actions";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,23 @@ export function ImportWorkflow() {
     if (!preview || !user || !mayWrite) return;
     atlas.importIncidents(preview.incidents, preview.report, user);
     setConfirmed(true);
+  }
+
+  function removePreviewIncident(incidentId: string) {
+    setPreview((current) => {
+      if (!current) return current;
+      const incidents = current.incidents.filter((incident) => incident.id !== incidentId);
+      return {
+        ...current,
+        incidents,
+        report: {
+          ...current.report,
+          validRows: incidents.length,
+          importedRows: incidents.length
+        }
+      };
+    });
+    setConfirmed(false);
   }
 
   return (
@@ -212,6 +230,7 @@ export function ImportWorkflow() {
                     <TableHead>Plataforma</TableHead>
                     <TableHead>Risk</TableHead>
                     <TableHead>Procedência</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -225,6 +244,19 @@ export function ImportWorkflow() {
                         <Badge variant={incident.provenanceType === "SIMULACAO_UI" ? "muted" : "default"}>
                           {incident.provenanceType}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {mayWrite ? (
+                          <ItemActions
+                            onDelete={() => removePreviewIncident(incident.id)}
+                            editHref={`${atlas.viewBasePath}/importacao`}
+                            editLabel="Editar mapeamento"
+                            deleteLabel="Remover do preview"
+                            deleteDisabled={confirmed}
+                          />
+                        ) : (
+                          <span className="text-xs text-atlas-muted">Somente leitura</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

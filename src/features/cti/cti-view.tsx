@@ -1,19 +1,47 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { PageTitle } from "@/components/layout/page-title";
 import { ReportActionButton } from "@/components/layout/report-action-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { ItemActions } from "@/components/ui/item-actions";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { LightweightAreaChart } from "@/components/ui/lightweight-charts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAtlas } from "@/features/state/atlas-store";
+import { useAuth } from "@/features/state/auth-store";
+import { canWrite } from "@/features/auth/auth";
 import { formatDateTime } from "@/utils/date";
+import type { Indicator, IndicatorType, RiskLevel } from "@/types/domain";
+import { indicatorTypes } from "@/types/domain";
+
+interface IndicatorDraft {
+  value: string;
+  type: IndicatorType;
+  severity: RiskLevel;
+  status: Indicator["status"];
+}
+
+const indicatorStatuses: Indicator["status"][] = ["novo", "em validação", "ativo", "contido", "arquivado"];
+const severityOptions: RiskLevel[] = ["Informativo", "Baixo", "Moderado", "Alto", "Crítico"];
 
 export function CtiView() {
-  const { indicators, incidents, viewBasePath } = useAtlas();
+  const atlas = useAtlas();
+  const { user } = useAuth();
+  const mayWrite = !atlas.readOnly && canWrite(user);
+  const { indicators, incidents, viewBasePath } = atlas;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<IndicatorDraft>({
+    value: "",
+    type: "Outro",
+    severity: "Baixo",
+    status: "novo"
+  });
   const cyberIncidents = incidents.filter((incident) =>
     ["Phishing", "Domínio fraudulento", "Malware", "Vazamento de credencial", "Ataque contra conta", "Ataque contra site", "Incidente cibernético"].includes(incident.category)
   );
@@ -22,6 +50,44 @@ export function CtiView() {
     risco: incident.riskScore,
     threat: incident.threatLevel
   }));
+
+  function startEdit(indicator: Indicator) {
+    setEditingId(indicator.id);
+    setDraft({
+      value: indicator.value,
+      type: indicator.type,
+      severity: indicator.severity,
+      status: indicator.status
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft({ value: "", type: "Outro", severity: "Baixo", status: "novo" });
+  }
+
+  function saveEdit(indicatorId: string) {
+    if (!user || !mayWrite) return;
+    atlas.updateIndicator(
+      indicatorId,
+      {
+        value: draft.value.trim() || "Indicador sem valor",
+        type: draft.type,
+        severity: draft.severity,
+        status: draft.status
+      },
+      user
+    );
+    cancelEdit();
+  }
+
+  function deleteIndicator(indicator: Indicator) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir o indicador "${indicator.value}"?`);
+    if (!confirmed) return;
+    atlas.deleteIndicator(indicator.id, user);
+    if (editingId === indicator.id) cancelEdit();
+  }
 
   return (
     <div>
@@ -74,27 +140,100 @@ export function CtiView() {
                 <TableHead>Status</TableHead>
                 <TableHead>Incidentes</TableHead>
                 <TableHead>Procedência</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {indicators.map((indicator) => (
-                <TableRow key={indicator.id}>
-                  <TableCell className="font-mono text-xs">{indicator.value}</TableCell>
-                  <TableCell><Badge>{indicator.type}</Badge></TableCell>
-                  <TableCell>{formatDateTime(indicator.firstSeen)}</TableCell>
-                  <TableCell>{formatDateTime(indicator.lastSeen)}</TableCell>
-                  <TableCell><RiskBadge level={indicator.severity} /></TableCell>
-                  <TableCell>{indicator.status}</TableCell>
-                  <TableCell>
-                    {indicator.incidentIds.map((id) => (
-                      <Link key={id} className="mr-2 text-atlas-action" href={`${viewBasePath}/incidents/${id}`}>
-                        Abrir
-                      </Link>
-                    ))}
-                  </TableCell>
-                  <TableCell><ProvenanceBadge value={indicator.provenanceType} /></TableCell>
-                </TableRow>
-              ))}
+              {indicators.map((indicator) => {
+                const isEditing = editingId === indicator.id;
+
+                return (
+                  <TableRow key={indicator.id}>
+                    <TableCell className="font-mono text-xs">
+                      {isEditing ? (
+                        <Input
+                          value={draft.value}
+                          onChange={(event) => setDraft((current) => ({ ...current, value: event.target.value }))}
+                          aria-label="Valor do indicador"
+                          className="min-w-48 font-mono"
+                        />
+                      ) : (
+                        indicator.value
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {isEditing ? (
+                        <Select
+                          value={draft.type}
+                          onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value as IndicatorType }))}
+                          className="min-w-40"
+                        >
+                          {indicatorTypes.map((type) => (
+                            <option key={type}>{type}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Badge>{indicator.type}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>{formatDateTime(indicator.firstSeen)}</TableCell>
+                    <TableCell>{formatDateTime(indicator.lastSeen)}</TableCell>
+                    <TableCell>
+                      {isEditing ? (
+                        <Select
+                          value={draft.severity}
+                          onChange={(event) => setDraft((current) => ({ ...current, severity: event.target.value as RiskLevel }))}
+                          className="min-w-36"
+                        >
+                          {severityOptions.map((severity) => (
+                            <option key={severity}>{severity}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <RiskBadge level={indicator.severity} />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {isEditing ? (
+                        <Select
+                          value={draft.status}
+                          onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as Indicator["status"] }))}
+                          className="min-w-36"
+                        >
+                          {indicatorStatuses.map((status) => (
+                            <option key={status}>{status}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        indicator.status
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {indicator.incidentIds.map((id) => (
+                        <Link key={id} className="mr-2 text-atlas-action" href={`${viewBasePath}/incidents/${id}`}>
+                          Abrir
+                        </Link>
+                      ))}
+                    </TableCell>
+                    <TableCell><ProvenanceBadge value={indicator.provenanceType} /></TableCell>
+                    <TableCell>
+                      {mayWrite ? (
+                        <ItemActions
+                          isEditing={isEditing}
+                          onEdit={() => startEdit(indicator)}
+                          onSave={() => saveEdit(indicator.id)}
+                          onCancel={cancelEdit}
+                          onDelete={() => deleteIndicator(indicator)}
+                          editLabel="Editar indicador"
+                          deleteLabel="Excluir indicador"
+                        />
+                      ) : (
+                        <span className="text-xs text-atlas-muted">Somente leitura</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

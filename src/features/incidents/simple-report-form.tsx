@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, Send } from "lucide-react";
+import { CheckCircle2, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,10 @@ import { useAtlas } from "@/features/state/atlas-store";
 import { useAuth } from "@/features/state/auth-store";
 import { canWrite } from "@/features/auth/auth";
 import { cn } from "@/lib/utils";
+import { createId } from "@/utils/id";
+import { isoNow } from "@/utils/date";
+import { createImagePreviewDataUrl } from "@/utils/evidence-preview";
+import type { Evidence, EvidenceType } from "@/types/domain";
 import {
   actorProfileTypeOptions,
   actorSocialNetworkOptions,
@@ -256,13 +261,64 @@ export function SimpleReportForm() {
     threatCaseType: isThreatReport ? resolveThreatCaseType(searchParams.get("threat")) : undefined
   });
   const [error, setError] = useState("");
+  const [isPreparingPreview, setIsPreparingPreview] = useState(false);
+  const evidenceFileRef = useRef<File | null>(null);
 
   function updateReport<K extends keyof SimpleReportInput>(key: K, value: SimpleReportInput[K]) {
     setReport((current) => ({ ...current, [key]: value }));
     setError("");
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function updateEvidenceFile(file: File | undefined) {
+    if (!file) {
+      evidenceFileRef.current = null;
+      setIsPreparingPreview(false);
+      setReport((current) => ({
+        ...current,
+        evidenceFileName: undefined,
+        evidenceFileType: undefined,
+        evidenceFileSize: undefined,
+        evidenceImagePreviewUrl: undefined
+      }));
+      return;
+    }
+
+    evidenceFileRef.current = file;
+    setReport((current) => ({
+      ...current,
+      evidenceKind: evidenceKindFromFile(file, current.evidenceKind),
+      evidenceFileName: file.name,
+      evidenceFileType: file.type || undefined,
+      evidenceFileSize: file.size,
+      evidenceImagePreviewUrl: undefined
+    }));
+    setError("");
+
+    setIsPreparingPreview(true);
+    const imagePreviewUrl = await createImagePreviewDataUrl(file).catch(() => undefined);
+    if (evidenceFileRef.current !== file) return;
+    setReport((current) => ({
+      ...current,
+      evidenceImagePreviewUrl: imagePreviewUrl
+    }));
+    setIsPreparingPreview(false);
+  }
+
+  function clearEvidenceFile() {
+    evidenceFileRef.current = null;
+    setIsPreparingPreview(false);
+    setReport((current) => ({
+      ...current,
+      evidenceFileName: undefined,
+      evidenceFileType: undefined,
+      evidenceFileSize: undefined,
+      evidenceImagePreviewUrl: undefined
+    }));
+    const input = document.getElementById("evidence-file") as HTMLInputElement | null;
+    if (input) input.value = "";
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
     if (!mayWrite) {
@@ -274,8 +330,11 @@ export function SimpleReportForm() {
       return;
     }
 
-    const incident = incidentFromSimpleReport(report, atlas.activeMonitoredEntityId);
+    const reportToSave = await withEvidencePreview(report, evidenceFileRef.current, setIsPreparingPreview);
+    const incident = incidentFromSimpleReport(reportToSave, atlas.activeMonitoredEntityId);
     atlas.addIncident(incident, user);
+    const evidence = evidenceFromReport(reportToSave, incident.id, user.name, incident.provenanceType);
+    if (evidence) atlas.addEvidence(evidence, user);
     router.push(`/incidents/${incident.id}`);
   }
 
@@ -534,17 +593,38 @@ export function SimpleReportForm() {
                     id="evidence-file"
                     type="file"
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      updateReport("evidenceFileName", file?.name);
-                      updateReport("evidenceFileType", file?.type || undefined);
-                      updateReport("evidenceFileSize", file?.size);
-                    }}
+                    onChange={(event) => void updateEvidenceFile(event.target.files?.[0])}
                   />
                   {report.evidenceFileName ? (
-                    <p className="text-xs text-atlas-muted">
-                      Selecionado: {report.evidenceFileName}
-                    </p>
+                    <div className="rounded-md border border-atlas-border bg-[#071126]/70 p-3 text-sm text-atlas-muted">
+                      {report.evidenceImagePreviewUrl ? (
+                        <Image
+                          src={report.evidenceImagePreviewUrl}
+                          alt={report.evidenceFileName}
+                          width={224}
+                          height={126}
+                          unoptimized
+                          className="mb-3 aspect-video w-56 rounded-md border border-atlas-border object-cover"
+                        />
+                      ) : isPreparingPreview ? (
+                        <div className="mb-3 flex aspect-video w-56 items-center justify-center rounded-md border border-atlas-border bg-[#071126]/80 text-xs text-atlas-muted">
+                          Gerando miniatura...
+                        </div>
+                      ) : null}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-atlas-text">Selecionado: {report.evidenceFileName}</p>
+                          <p className="mt-1 text-xs text-atlas-muted">
+                            {report.evidenceFileType || "Tipo não informado"}
+                            {report.evidenceFileSize ? ` · ${formatFileSize(report.evidenceFileSize)}` : ""}
+                          </p>
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" onClick={clearEvidenceFile}>
+                          <X className="h-4 w-4" />
+                          Remover
+                        </Button>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
 
@@ -658,13 +738,87 @@ export function SimpleReportForm() {
           ) : null}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={!mayWrite}>
+            <Button type="submit" disabled={!mayWrite || isPreparingPreview}>
               <Send className="h-4 w-4" />
-              Salvar report
+              {isPreparingPreview ? "Preparando evidência" : "Salvar report"}
             </Button>
           </div>
         </CardContent>
       </Card>
     </form>
   );
+}
+
+function evidenceFromReport(
+  report: SimpleReportInput,
+  incidentId: string,
+  userName: string,
+  provenanceType: Evidence["provenanceType"]
+): Evidence | null {
+  const videoUrl = report.evidenceVideoUrl?.trim();
+  const hasEvidence = Boolean(report.evidenceFileName || report.evidenceImagePreviewUrl || videoUrl);
+  if (!hasEvidence) return null;
+
+  const description = report.evidenceFileName
+    ? `Arquivo anexado: ${report.evidenceFileName}`
+    : videoUrl
+      ? "Link de vídeo anexado ao report"
+      : "Evidência anexada ao report";
+
+  return {
+    id: createId("ev"),
+    incidentId,
+    type: evidenceTypeFromReport(report),
+    description,
+    url: videoUrl || undefined,
+    fileName: report.evidenceFileName,
+    fileType: report.evidenceFileType,
+    fileSize: report.evidenceFileSize,
+    imagePreviewUrl: report.evidenceImagePreviewUrl,
+    collectedBy: userName,
+    collectedAt: isoNow(),
+    source: report.evidenceFileName || videoUrl || "Report com evidência",
+    integrity: "metadados pendentes",
+    observation: report.observation,
+    confidenceLevel: "medium",
+    provenanceType
+  };
+}
+
+async function withEvidencePreview(
+  report: SimpleReportInput,
+  file: File | null,
+  setPreparing: (value: boolean) => void
+): Promise<SimpleReportInput> {
+  if (!file || report.evidenceImagePreviewUrl) return report;
+
+  setPreparing(true);
+  const imagePreviewUrl = await createImagePreviewDataUrl(file).catch(() => undefined);
+  setPreparing(false);
+
+  return imagePreviewUrl ? { ...report, evidenceImagePreviewUrl: imagePreviewUrl } : report;
+}
+
+function evidenceKindFromFile(file: File, fallback: SimpleEvidenceKind | undefined): SimpleEvidenceKind {
+  if (file.type.startsWith("image/")) return "Foto ou imagem";
+  if (file.type.includes("pdf") || file.type.includes("document") || /\.(pdf|docx?|xlsx?|csv|txt)$/i.test(file.name)) {
+    return "Documento";
+  }
+  return fallback ?? "Arquivo";
+}
+
+function evidenceTypeFromReport(report: SimpleReportInput): EvidenceType {
+  if (report.evidenceFileType?.startsWith("image/") || report.evidenceKind === "Foto ou imagem") return "Screenshot";
+  if (report.evidenceFileType?.startsWith("video/") || report.evidenceKind === "Link de vídeo") return "Vídeo";
+  if (report.evidenceFileType?.startsWith("audio/")) return "Áudio";
+  if (report.evidenceKind === "Documento") return "Documento";
+  return report.evidenceVideoUrl?.trim() ? "Vídeo" : "Arquivo";
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: value >= 10 ? 0 : 1 }).format(value)} ${units[index]}`;
 }

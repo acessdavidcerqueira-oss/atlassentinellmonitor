@@ -2,21 +2,27 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Download, ExternalLink, FileText, Search } from "lucide-react";
+import { Download, FileText, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReportActionButton } from "@/components/layout/report-action-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { ItemActions } from "@/components/ui/item-actions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useAtlas } from "@/features/state/atlas-store";
+import { useAuth } from "@/features/state/auth-store";
+import { canWrite } from "@/features/auth/auth";
+import type { Incident } from "@/types/domain";
 import { exportIncidentsCsv } from "@/services/csv-import";
 import { fakeNewsLabel } from "@/services/simple-report";
 import { formatDateTime } from "@/utils/date";
 
 export function IncidentsTable() {
   const state = useAtlas();
+  const { user } = useAuth();
+  const mayWrite = !state.readOnly && canWrite(user);
   const [keyword, setKeyword] = useState("");
   const [fakeNews, setFakeNews] = useState("all");
   const [status, setStatus] = useState("all");
@@ -45,6 +51,13 @@ export function IncidentsTable() {
 
   function downloadJson() {
     downloadText("atlas-sentinel-incidents.json", JSON.stringify(filtered, null, 2), "application/json");
+  }
+
+  function deleteIncident(incident: Incident) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir o report "${incident.title}"?`);
+    if (!confirmed) return;
+    state.deleteIncident(incident.id, user);
   }
 
   return (
@@ -104,7 +117,7 @@ export function IncidentsTable() {
                 <TableHead>Alcance estimado</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Data</TableHead>
-                <TableHead>Ações</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -151,11 +164,18 @@ export function IncidentsTable() {
                         <span className="text-xs">{formatDateTime(incident.updatedAt)}</span>
                       </TableCell>
                       <TableCell>
-                        <Button asChild variant="ghost" size="icon" aria-label="Abrir incidente">
-                          <Link href={`${state.viewBasePath}/incidents/${incident.id}`}>
-                            <ExternalLink className="h-4 w-4" />
-                          </Link>
-                        </Button>
+                        {mayWrite ? (
+                          <ItemActions
+                            editHref={`${state.viewBasePath}/incidents/${incident.id}`}
+                            editLabel="Editar report"
+                            deleteLabel="Excluir report"
+                            onDelete={() => deleteIncident(incident)}
+                          />
+                        ) : (
+                          <Button asChild variant="ghost" size="sm">
+                            <Link href={`${state.viewBasePath}/incidents/${incident.id}`}>Abrir</Link>
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

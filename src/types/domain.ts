@@ -252,6 +252,9 @@ export interface Evidence {
   description: string;
   url?: string;
   fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+  imagePreviewUrl?: string;
   fileHash?: string;
   collectedBy: string;
   collectedAt: string;

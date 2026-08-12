@@ -22,6 +22,7 @@ import type { RiskLevel } from "@/types/domain";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ItemActions } from "@/components/ui/item-actions";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { ReportActionButton } from "@/components/layout/report-action-button";
@@ -40,7 +41,9 @@ import {
   type DashboardPeriod
 } from "@/services/dashboard-analytics";
 import { reportThemeDefinitions, type ReportTheme } from "@/services/simple-report";
+import { canWrite } from "@/features/auth/auth";
 import { formatDateTime } from "@/utils/date";
+import { useAuth } from "@/features/state/auth-store";
 
 const palette = ["#79DFFF", "#48CFF2", "#FBBF24", "#FB7185", "#34D399", "#A78BFA", "#F97316"];
 const periods: Array<{ value: DashboardPeriod; label: string }> = [
@@ -63,6 +66,8 @@ const dashboardReportThemes: ReportTheme[] = [
 
 export function CommandCenter() {
   const state = useAtlas();
+  const { user } = useAuth();
+  const mayWrite = !state.readOnly && canWrite(user);
   const [period, setPeriod] = useState<DashboardPeriod>("24h");
   const analytics = useMemo(() => getDashboardAnalytics(state, period), [period, state]);
   const { kpis } = analytics;
@@ -219,15 +224,57 @@ export function CommandCenter() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <NarrativesPanel items={analytics.topNarratives} />
-        <ActorsPanel items={analytics.topActors} />
+        <NarrativesPanel
+          items={analytics.topNarratives}
+          basePath={state.viewBasePath}
+          mayWrite={mayWrite}
+          onDelete={(narrative) => {
+            if (!user) return;
+            const confirmed = window.confirm(`Excluir a narrativa "${narrative.name}"?`);
+            if (!confirmed) return;
+            state.deleteNarrative(narrative.id, user);
+          }}
+        />
+        <ActorsPanel
+          items={analytics.topActors}
+          basePath={state.viewBasePath}
+          mayWrite={mayWrite}
+          onDelete={(actor) => {
+            if (!user) return;
+            const confirmed = window.confirm(`Excluir o ator/página "${actor.name}"?`);
+            if (!confirmed) return;
+            state.deleteActor(actor.id, user);
+          }}
+        />
         <SourcesPanel items={analytics.topSources} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
         <AlertsPanel items={analytics.criticalAlerts} basePath={state.viewBasePath} />
-        <IncidentList title="Aguardando triagem" items={analytics.triage} basePath={state.viewBasePath} />
-        <EvidencePanel items={analytics.recentEvidences} basePath={state.viewBasePath} />
+        <IncidentList
+          title="Aguardando triagem"
+          items={analytics.triage}
+          basePath={state.viewBasePath}
+          mayWrite={mayWrite}
+          onDelete={(incident) => {
+            if (!user) return;
+            const confirmed = window.confirm(`Excluir o report "${incident.title}"?`);
+            if (!confirmed) return;
+            state.deleteIncident(incident.id, user);
+          }}
+        />
+        <EvidencePanel
+          items={analytics.recentEvidences}
+          basePath={state.viewBasePath}
+          mayWrite={mayWrite}
+          onDelete={(evidenceId) => {
+            if (!user) return;
+            const evidence = state.evidences.find((item) => item.id === evidenceId);
+            const confirmed = window.confirm(`Excluir a evidência "${evidence?.description ?? evidenceId}"?`);
+            if (!confirmed) return;
+            state.deleteEvidence(evidenceId, user);
+          }}
+        />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.95fr_0.95fr]">
@@ -302,7 +349,17 @@ function ChartCard({ title, data, color = "#48CFF2" }: { title: string; data: Co
   );
 }
 
-function NarrativesPanel({ items }: { items: ReturnType<typeof getDashboardAnalytics>["topNarratives"] }) {
+function NarrativesPanel({
+  items,
+  basePath,
+  mayWrite,
+  onDelete
+}: {
+  items: ReturnType<typeof getDashboardAnalytics>["topNarratives"];
+  basePath: string;
+  mayWrite: boolean;
+  onDelete: (narrative: ReturnType<typeof getDashboardAnalytics>["topNarratives"][number]) => void;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -319,7 +376,17 @@ function NarrativesPanel({ items }: { items: ReturnType<typeof getDashboardAnaly
                     {narrative.volume} reports · {narrative.sentiment} · {narrative.status}
                   </p>
                 </div>
-                <RiskBadge level={riskLevelFromScore(narrative.riskScore)} score={narrative.riskScore} />
+                <div className="flex shrink-0 items-start gap-2">
+                  <RiskBadge level={riskLevelFromScore(narrative.riskScore)} score={narrative.riskScore} />
+                  {mayWrite ? (
+                    <ItemActions
+                      editHref={`${basePath}/narrativas`}
+                      onDelete={() => onDelete(narrative)}
+                      editLabel="Editar narrativa"
+                      deleteLabel="Excluir narrativa"
+                    />
+                  ) : null}
+                </div>
               </div>
               {narrative.trend !== undefined ? (
                 <div className="mt-3">
@@ -342,7 +409,17 @@ function NarrativesPanel({ items }: { items: ReturnType<typeof getDashboardAnaly
   );
 }
 
-function ActorsPanel({ items }: { items: ReturnType<typeof getDashboardAnalytics>["topActors"] }) {
+function ActorsPanel({
+  items,
+  basePath,
+  mayWrite,
+  onDelete
+}: {
+  items: ReturnType<typeof getDashboardAnalytics>["topActors"];
+  basePath: string;
+  mayWrite: boolean;
+  onDelete: (actor: ReturnType<typeof getDashboardAnalytics>["topActors"][number]) => void;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -358,7 +435,17 @@ function ActorsPanel({ items }: { items: ReturnType<typeof getDashboardAnalytics
                   {actor.platform} · {actor.reports} reports · {actor.role}
                 </p>
               </div>
-              <RiskBadge level={riskLevelFromScore(actor.riskScore)} score={actor.riskScore} />
+              <div className="flex shrink-0 items-center gap-2">
+                <RiskBadge level={riskLevelFromScore(actor.riskScore)} score={actor.riskScore} />
+                {mayWrite ? (
+                  <ItemActions
+                    editHref={`${basePath}/atores`}
+                    onDelete={() => onDelete(actor)}
+                    editLabel="Editar ator ou página"
+                    deleteLabel="Excluir ator ou página"
+                  />
+                ) : null}
+              </div>
             </div>
           ))
         ) : (
@@ -439,11 +526,15 @@ function AlertsPanel({ items, basePath }: { items: DashboardAlert[]; basePath: s
 function IncidentList({
   title,
   items,
-  basePath
+  basePath,
+  mayWrite,
+  onDelete
 }: {
   title: string;
   items: ReturnType<typeof getDashboardAnalytics>["triage"];
   basePath: string;
+  mayWrite: boolean;
+  onDelete: (incident: ReturnType<typeof getDashboardAnalytics>["triage"][number]) => void;
 }) {
   return (
     <Card>
@@ -453,23 +544,32 @@ function IncidentList({
       <CardContent className="space-y-3">
         {items.length ? (
           items.map((incident) => (
-            <Link
-              key={incident.id}
-              href={`${basePath}/incidents/${incident.id}`}
-              className="block rounded-md border border-atlas-border bg-white/5 p-3 transition hover:bg-white/8"
-            >
+            <div key={incident.id} className="rounded-md border border-atlas-border bg-white/5 p-3 transition hover:bg-white/8">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate font-medium text-atlas-text">{incident.title}</p>
                   <p className="mt-1 text-xs text-atlas-muted">{formatDateTime(incident.updatedAt)}</p>
                 </div>
-                <RiskBadge level={incident.riskLevel} score={incident.riskScore} />
+                <div className="flex shrink-0 items-start gap-2">
+                  <RiskBadge level={incident.riskLevel} score={incident.riskScore} />
+                  {mayWrite ? (
+                    <ItemActions
+                      editHref={`${basePath}/incidents/${incident.id}`}
+                      onDelete={() => onDelete(incident)}
+                      editLabel="Editar report"
+                      deleteLabel="Excluir report"
+                    />
+                  ) : null}
+                </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge variant="muted">{incident.category}</Badge>
                 <ProvenanceBadge value={incident.provenanceType} />
               </div>
-            </Link>
+              <Button asChild variant="ghost" size="sm" className="mt-3">
+                <Link href={`${basePath}/incidents/${incident.id}`}>Abrir detalhe</Link>
+              </Button>
+            </div>
           ))
         ) : (
           <EmptyState>Nenhum report aguardando triagem.</EmptyState>
@@ -485,7 +585,17 @@ function IncidentList({
   );
 }
 
-function EvidencePanel({ items, basePath }: { items: DashboardEvidence[]; basePath: string }) {
+function EvidencePanel({
+  items,
+  basePath,
+  mayWrite,
+  onDelete
+}: {
+  items: DashboardEvidence[];
+  basePath: string;
+  mayWrite: boolean;
+  onDelete: (evidenceId: string) => void;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -494,22 +604,29 @@ function EvidencePanel({ items, basePath }: { items: DashboardEvidence[]; basePa
       <CardContent className="space-y-3">
         {items.length ? (
           items.map((evidence) => (
-            <Link
-              key={evidence.id}
-              href={`${basePath}/incidents/${evidence.incidentId}`}
-              className="block rounded-md border border-atlas-border bg-white/5 p-3 transition hover:bg-white/8"
-            >
-              <div className="flex items-start gap-3">
+            <div key={evidence.id} className="rounded-md border border-atlas-border bg-white/5 p-3 transition hover:bg-white/8">
+              <div className="flex items-start justify-between gap-3">
                 <FileText className="mt-0.5 h-4 w-4 shrink-0 text-atlas-action" />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-atlas-text">{evidence.incidentTitle}</p>
                   <p className="mt-1 text-xs text-atlas-muted">
                     {evidence.type} · {evidence.source || "fonte não informada"}
                   </p>
                   <p className="mt-1 text-xs text-atlas-muted">{formatDateTime(evidence.collectedAt)}</p>
                 </div>
+                {mayWrite ? (
+                  <ItemActions
+                    editHref={`${basePath}/incidents/${evidence.incidentId}`}
+                    onDelete={() => onDelete(evidence.id)}
+                    editLabel="Editar evidência"
+                    deleteLabel="Excluir evidência"
+                  />
+                ) : null}
               </div>
-            </Link>
+              <Button asChild variant="ghost" size="sm" className="mt-3">
+                <Link href={`${basePath}/incidents/${evidence.incidentId}`}>Abrir detalhe</Link>
+              </Button>
+            </div>
           ))
         ) : (
           <EmptyState>Nenhuma evidência registrada no período.</EmptyState>

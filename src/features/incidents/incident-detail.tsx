@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AlertTriangle, CheckCircle2, FilePlus, Link2, Save, ShieldAlert, Upload, X } from "lucide-react";
@@ -11,17 +12,27 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ItemActions } from "@/components/ui/item-actions";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { RiskBadge } from "@/components/ui/risk-badge";
+import { EvidenceThumbnail } from "@/features/evidence/evidence-thumbnail";
 import { useAtlas } from "@/features/state/atlas-store";
 import { useAuth } from "@/features/state/auth-store";
 import { canWrite } from "@/features/auth/auth";
 import { createId } from "@/utils/id";
 import { isoNow, formatDateTime } from "@/utils/date";
+import { createImagePreviewDataUrl } from "@/utils/evidence-preview";
 import { threatLevelLabel } from "@/services/risk";
 import { fakeNewsLabel } from "@/services/simple-report";
 import type { Evidence, EvidenceType, IncidentStatus } from "@/types/domain";
 import { evidenceTypes, incidentStatuses } from "@/types/domain";
+
+interface EvidenceEditDraft {
+  type: EvidenceType;
+  description: string;
+  source: string;
+  url: string;
+}
 
 export function IncidentDetail({ incidentId }: { incidentId?: string }) {
   const params = useParams<{ id: string }>();
@@ -42,10 +53,20 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
     source: "",
     fileName: "",
     fileType: "",
-    fileSize: 0
+    fileSize: 0,
+    imagePreviewUrl: ""
   });
   const evidenceFileInputRef = useRef<HTMLInputElement>(null);
+  const evidenceFileRef = useRef<File | null>(null);
   const [evidenceError, setEvidenceError] = useState("");
+  const [evidencePreviewLoading, setEvidencePreviewLoading] = useState(false);
+  const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
+  const [evidenceDraft, setEvidenceDraft] = useState<EvidenceEditDraft>({
+    type: "URL",
+    description: "",
+    source: "",
+    url: ""
+  });
 
   const evidences = useMemo(
     () => atlas.evidences.filter((item) => item.incidentId === incident?.id),
@@ -76,8 +97,12 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
     atlas.updateIncident(currentIncident.id, { status }, user, "Status alterado manualmente no detalhe do incidente.");
   }
 
-  function addEvidence() {
+  async function addEvidence() {
     if (!user || !mayWrite) return;
+    const imagePreviewUrl =
+      evidence.imagePreviewUrl ||
+      (evidenceFileRef.current ? await createImagePreviewDataUrl(evidenceFileRef.current).catch(() => undefined) : undefined) ||
+      "";
     const description = evidence.description.trim() || (evidence.fileName ? `Arquivo anexado: ${evidence.fileName}` : "");
     const source = evidence.source.trim() || evidence.fileName || evidence.url.trim();
     const hasEvidenceContent = Boolean(description || evidence.url.trim() || evidence.fileName);
@@ -94,6 +119,9 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
       description: description || "Evidência adicionada",
       url: evidence.url.trim() || undefined,
       fileName: evidence.fileName || undefined,
+      fileType: evidence.fileType || undefined,
+      fileSize: evidence.fileSize || undefined,
+      imagePreviewUrl: imagePreviewUrl || undefined,
       collectedBy: user.name,
       collectedAt: isoNow(),
       source: source || "Inserção manual",
@@ -107,13 +135,15 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
       provenanceType: currentIncident.provenanceType
     };
     atlas.addEvidence(newEvidence, user);
-    setEvidence({ type: "URL", description: "", url: "", source: "", fileName: "", fileType: "", fileSize: 0 });
+    setEvidence({ type: "URL", description: "", url: "", source: "", fileName: "", fileType: "", fileSize: 0, imagePreviewUrl: "" });
+    evidenceFileRef.current = null;
     setEvidenceError("");
     if (evidenceFileInputRef.current) evidenceFileInputRef.current.value = "";
   }
 
-  function attachEvidenceFile(file: File | undefined) {
+  async function attachEvidenceFile(file: File | undefined) {
     if (!file) return;
+    evidenceFileRef.current = file;
     setEvidence((current) => ({
       ...current,
       type: inferEvidenceType(file),
@@ -121,14 +151,64 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
       source: current.source.trim() || file.name,
       fileName: file.name,
       fileType: file.type,
-      fileSize: file.size
+      fileSize: file.size,
+      imagePreviewUrl: ""
     }));
     setEvidenceError("");
+
+    setEvidencePreviewLoading(true);
+    const imagePreviewUrl = await createImagePreviewDataUrl(file).catch(() => undefined);
+    if (evidenceFileRef.current !== file) return;
+    setEvidence((current) => ({
+      ...current,
+      imagePreviewUrl: imagePreviewUrl ?? ""
+    }));
+    setEvidencePreviewLoading(false);
   }
 
   function clearEvidenceFile() {
-    setEvidence((current) => ({ ...current, fileName: "", fileType: "", fileSize: 0 }));
+    evidenceFileRef.current = null;
+    setEvidencePreviewLoading(false);
+    setEvidence((current) => ({ ...current, fileName: "", fileType: "", fileSize: 0, imagePreviewUrl: "" }));
     if (evidenceFileInputRef.current) evidenceFileInputRef.current.value = "";
+  }
+
+  function startEvidenceEdit(item: Evidence) {
+    setEditingEvidenceId(item.id);
+    setEvidenceDraft({
+      type: item.type,
+      description: item.description,
+      source: item.source,
+      url: item.url ?? ""
+    });
+  }
+
+  function cancelEvidenceEdit() {
+    setEditingEvidenceId(null);
+    setEvidenceDraft({ type: "URL", description: "", source: "", url: "" });
+  }
+
+  function saveEvidenceEdit(evidenceId: string) {
+    if (!user || !mayWrite) return;
+    atlas.updateEvidence(
+      evidenceId,
+      {
+        type: evidenceDraft.type,
+        description: evidenceDraft.description.trim() || "Evidência sem descrição",
+        source: evidenceDraft.source.trim() || "Fonte não informada",
+        url: evidenceDraft.url.trim() || undefined
+      },
+      user
+    );
+    cancelEvidenceEdit();
+  }
+
+  function deleteEvidence(item: Evidence) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir a evidência "${item.description}"?`);
+    if (!confirmed) return;
+    atlas.deleteEvidence(item.id, user);
+    if (editingEvidenceId === item.id) cancelEvidenceEdit();
   }
 
   function relateActor() {
@@ -244,19 +324,75 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
             </CardHeader>
             <CardContent className="space-y-4">
               {evidences.length ? (
-                evidences.map((item) => (
-                  <div key={item.id} className="rounded-md border border-atlas-border bg-white/5 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge>{item.type}</Badge>
-                      <ProvenanceBadge value={item.provenanceType} />
-                      <span className="text-xs text-atlas-muted">{formatDateTime(item.collectedAt)}</span>
+                evidences.map((item) => {
+                  const isEditingEvidence = editingEvidenceId === item.id;
+
+                  return (
+                    <div key={item.id} className="rounded-md border border-atlas-border bg-white/5 p-3">
+                      <div className="flex gap-3">
+                        <EvidenceThumbnail evidence={item} className="w-32 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isEditingEvidence ? (
+                                <Select
+                                  value={evidenceDraft.type}
+                                  onChange={(event) => setEvidenceDraft((current) => ({ ...current, type: event.target.value as EvidenceType }))}
+                                  className="w-40"
+                                >
+                                  {evidenceTypes.map((type) => (
+                                    <option key={type}>{type}</option>
+                                  ))}
+                                </Select>
+                              ) : (
+                                <Badge>{item.type}</Badge>
+                              )}
+                              <ProvenanceBadge value={item.provenanceType} />
+                              <span className="text-xs text-atlas-muted">{formatDateTime(item.collectedAt)}</span>
+                            </div>
+                            {mayWrite ? (
+                              <ItemActions
+                                isEditing={isEditingEvidence}
+                                onEdit={() => startEvidenceEdit(item)}
+                                onSave={() => saveEvidenceEdit(item.id)}
+                                onCancel={cancelEvidenceEdit}
+                                onDelete={() => deleteEvidence(item)}
+                                editLabel="Editar evidência"
+                                deleteLabel="Excluir evidência"
+                              />
+                            ) : null}
+                          </div>
+                          {isEditingEvidence ? (
+                            <div className="mt-3 grid gap-2">
+                              <Input
+                                value={evidenceDraft.description}
+                                onChange={(event) => setEvidenceDraft((current) => ({ ...current, description: event.target.value }))}
+                                aria-label="Descrição da evidência"
+                              />
+                              <Input
+                                value={evidenceDraft.source}
+                                onChange={(event) => setEvidenceDraft((current) => ({ ...current, source: event.target.value }))}
+                                aria-label="Fonte da evidência"
+                              />
+                              <Input
+                                value={evidenceDraft.url}
+                                onChange={(event) => setEvidenceDraft((current) => ({ ...current, url: event.target.value }))}
+                                aria-label="URL da evidência"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <p className="mt-2 font-medium text-atlas-text">{item.description}</p>
+                              <p className="mt-1 break-words text-sm text-atlas-muted">{item.url || item.source}</p>
+                            </>
+                          )}
+                          {item.fileName ? <p className="mt-1 text-sm text-atlas-muted">Arquivo: {item.fileName}</p> : null}
+                          <p className="mt-1 text-xs text-atlas-muted">Integridade: {item.integrity}</p>
+                        </div>
+                      </div>
                     </div>
-                    <p className="mt-2 font-medium text-atlas-text">{item.description}</p>
-                    <p className="mt-1 text-sm text-atlas-muted">{item.url || item.source}</p>
-                    {item.fileName ? <p className="mt-1 text-sm text-atlas-muted">Arquivo: {item.fileName}</p> : null}
-                    <p className="mt-1 text-xs text-atlas-muted">Integridade: {item.integrity}</p>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-sm text-atlas-muted">Não disponível.</p>
               )}
@@ -311,6 +447,20 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
                     </div>
                     {evidence.fileName ? (
                       <div className="rounded-md border border-atlas-border bg-[#071126]/70 p-3 text-sm text-atlas-muted">
+                        {evidence.imagePreviewUrl ? (
+                          <Image
+                            src={evidence.imagePreviewUrl}
+                            alt={evidence.fileName}
+                            width={176}
+                            height={99}
+                            unoptimized
+                            className="mb-3 aspect-video w-44 rounded-md border border-atlas-border object-cover"
+                          />
+                        ) : evidencePreviewLoading ? (
+                          <div className="mb-3 flex aspect-video w-44 items-center justify-center rounded-md border border-atlas-border bg-[#071126]/80 text-xs text-atlas-muted">
+                            Gerando miniatura...
+                          </div>
+                        ) : null}
                         <p className="font-medium text-atlas-text">{evidence.fileName}</p>
                         <p>
                           {evidence.fileType || "Tipo não informado"}
@@ -328,9 +478,9 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
                     />
                   </div>
                   {evidenceError ? <p className="text-sm text-red-300 md:col-span-2">{evidenceError}</p> : null}
-                  <Button type="button" onClick={addEvidence}>
+                  <Button type="button" onClick={addEvidence} disabled={evidencePreviewLoading}>
                     <FilePlus className="h-4 w-4" />
-                    Adicionar evidência
+                    {evidencePreviewLoading ? "Preparando evidência" : "Adicionar evidência"}
                   </Button>
                 </div>
               ) : null}

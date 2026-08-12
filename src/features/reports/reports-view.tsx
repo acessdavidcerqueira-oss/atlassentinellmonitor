@@ -7,12 +7,15 @@ import { PageTitle } from "@/components/layout/page-title";
 import { ReportActionButton } from "@/components/layout/report-action-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ItemActions } from "@/components/ui/item-actions";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { useAtlas } from "@/features/state/atlas-store";
+import { useAuth } from "@/features/state/auth-store";
+import { canWrite } from "@/features/auth/auth";
 import { exportIncidentsCsv } from "@/services/csv-import";
 import { getDashboardAnalytics } from "@/services/dashboard-analytics";
 import { formatDateTime } from "@/utils/date";
-import type { Actor, Incident, RiskLevel } from "@/types/domain";
+import type { Actor, BlacklistEntry, Evidence, Incident, Narrative, RiskLevel } from "@/types/domain";
 
 interface PageGroup {
   name: string;
@@ -60,6 +63,8 @@ const modules = [
 
 export function ReportsView() {
   const state = useAtlas();
+  const { user } = useAuth();
+  const mayWrite = !state.readOnly && canWrite(user);
   const allIncidents = state.incidents
     .filter((incident) => !incident.deletedAt)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -90,6 +95,41 @@ export function ReportsView() {
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     downloadBlob(blob, "atlas-sentinel-relatorio-completo.json");
+  }
+
+  function deleteIncident(incident: Incident) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir o report "${incident.title}"?`);
+    if (!confirmed) return;
+    state.deleteIncident(incident.id, user);
+  }
+
+  function deleteNarrative(narrative: Narrative) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir a narrativa "${narrative.name}"?`);
+    if (!confirmed) return;
+    state.deleteNarrative(narrative.id, user);
+  }
+
+  function deleteActor(actor: Actor) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir o ator/página "${actor.name}"?`);
+    if (!confirmed) return;
+    state.deleteActor(actor.id, user);
+  }
+
+  function deleteEvidence(evidence: Evidence) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir a evidência "${evidence.description}"?`);
+    if (!confirmed) return;
+    state.deleteEvidence(evidence.id, user);
+  }
+
+  function deleteBlacklist(entry: BlacklistEntry) {
+    if (!user || !mayWrite) return;
+    const confirmed = window.confirm(`Excluir "${entry.value}" da blacklist?`);
+    if (!confirmed) return;
+    state.deleteBlacklistEntry(entry.id, user);
   }
 
   return (
@@ -225,7 +265,15 @@ export function ReportsView() {
             <SectionTitle title="Reports registrados" />
             <div className="space-y-3">
               {allIncidents.length ? (
-                allIncidents.map((incident) => <IncidentReportCard key={incident.id} incident={incident} />)
+                allIncidents.map((incident) => (
+                  <IncidentReportCard
+                    key={incident.id}
+                    incident={incident}
+                    basePath={state.viewBasePath}
+                    mayWrite={mayWrite}
+                    onDelete={() => deleteIncident(incident)}
+                  />
+                ))
               ) : (
                 <EmptyText>Nenhum report registrado.</EmptyText>
               )}
@@ -240,6 +288,16 @@ export function ReportsView() {
                   title={narrative.name}
                   subtitle={`${narrative.status} · ${narrative.polarity} · volume ${narrative.volume}`}
                   badge={<RiskBadge level={riskLevelFromScore(narrative.riskScore)} score={narrative.riskScore} />}
+                  actions={
+                    mayWrite ? (
+                      <ItemActions
+                        editHref={`${state.viewBasePath}/narrativas`}
+                        onDelete={() => deleteNarrative(narrative)}
+                        editLabel="Editar narrativa"
+                        deleteLabel="Excluir narrativa"
+                      />
+                    ) : null
+                  }
                 />
               ))}
             </ListPanel>
@@ -251,6 +309,16 @@ export function ReportsView() {
                   title={actor.name}
                   subtitle={`${actor.platform || "Plataforma não informada"} · ${actor.type} · ${formatFollowers(actor)}`}
                   badge={<RiskBadge level={riskLevelFromScore(actor.riskScore)} score={actor.riskScore} />}
+                  actions={
+                    mayWrite ? (
+                      <ItemActions
+                        editHref={`${state.viewBasePath}/atores`}
+                        onDelete={() => deleteActor(actor)}
+                        editLabel="Editar ator ou página"
+                        deleteLabel="Excluir ator ou página"
+                      />
+                    ) : null
+                  }
                 />
               ))}
             </ListPanel>
@@ -262,6 +330,16 @@ export function ReportsView() {
                   title={evidence.description}
                   subtitle={`${evidence.type} · ${evidence.source || evidence.url || "Fonte não informada"} · ${formatDateTime(evidence.collectedAt)}`}
                   badge={<Badge variant="muted">{evidence.integrity}</Badge>}
+                  actions={
+                    mayWrite ? (
+                      <ItemActions
+                        editHref={`${state.viewBasePath}/incidents/${evidence.incidentId}`}
+                        onDelete={() => deleteEvidence(evidence)}
+                        editLabel="Editar evidência"
+                        deleteLabel="Excluir evidência"
+                      />
+                    ) : null
+                  }
                 />
               ))}
             </ListPanel>
@@ -273,6 +351,16 @@ export function ReportsView() {
                   title={entry.value}
                   subtitle={`${entry.kind} · ${entry.reason || "Sem motivo informado"} · atualizado em ${formatDateTime(entry.updatedAt)}`}
                   badge={<Badge variant="muted">{entry.status}</Badge>}
+                  actions={
+                    mayWrite ? (
+                      <ItemActions
+                        editHref={`${state.viewBasePath}/blacklist`}
+                        onDelete={() => deleteBlacklist(entry)}
+                        editLabel="Editar item da blacklist"
+                        deleteLabel="Excluir item da blacklist"
+                      />
+                    ) : null
+                  }
                 />
               ))}
             </ListPanel>
@@ -335,7 +423,17 @@ function ModuleSummary({
   );
 }
 
-function IncidentReportCard({ incident }: { incident: Incident }) {
+function IncidentReportCard({
+  incident,
+  basePath,
+  mayWrite,
+  onDelete
+}: {
+  incident: Incident;
+  basePath: string;
+  mayWrite: boolean;
+  onDelete: () => void;
+}) {
   const page = incident.authorName || incident.authorHandle || incident.domain || incident.platform || "Não disponível";
   return (
     <div className="rounded-md border border-atlas-border bg-white/5 p-4">
@@ -344,7 +442,17 @@ function IncidentReportCard({ incident }: { incident: Incident }) {
           <h3 className="font-display text-lg font-semibold text-atlas-text">{page}</h3>
           <p className="mt-1 text-sm leading-6 text-atlas-muted">{incident.summary || incident.content || "Sem resumo informado."}</p>
         </div>
-        <RiskBadge level={incident.riskLevel} score={incident.riskScore} />
+        <div className="flex shrink-0 items-start gap-2">
+          <RiskBadge level={incident.riskLevel} score={incident.riskScore} />
+          {mayWrite ? (
+            <ItemActions
+              editHref={`${basePath}/incidents/${incident.id}`}
+              onDelete={onDelete}
+              editLabel="Editar report"
+              deleteLabel="Excluir report"
+            />
+          ) : null}
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <Badge>{incident.category}</Badge>
@@ -381,14 +489,27 @@ function ListPanel({ title, empty, children }: { title: string; empty: string; c
   );
 }
 
-function CompactItem({ title, subtitle, badge }: { title: string; subtitle: string; badge: React.ReactNode }) {
+function CompactItem({
+  title,
+  subtitle,
+  badge,
+  actions
+}: {
+  title: string;
+  subtitle: string;
+  badge: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-md border border-atlas-border bg-black/10 p-3">
       <div>
         <p className="font-medium text-atlas-text">{title}</p>
         <p className="mt-1 text-sm leading-5 text-atlas-muted">{subtitle}</p>
       </div>
-      {badge}
+      <div className="flex shrink-0 items-start gap-2">
+        {badge}
+        {actions}
+      </div>
     </div>
   );
 }

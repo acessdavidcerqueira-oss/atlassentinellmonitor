@@ -3,7 +3,18 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import type { AtlasState, AuditLog, BlacklistEntry, BlacklistStatus, Evidence, Incident } from "@/types/domain";
+import type {
+  Actor,
+  AtlasState,
+  AuditLog,
+  BlacklistEntry,
+  BlacklistStatus,
+  Evidence,
+  ImportReport,
+  Incident,
+  Indicator,
+  Narrative
+} from "@/types/domain";
 import { buildDemoState } from "@/services/demo-data";
 import { evaluateIncidentAlerts } from "@/services/alerts";
 import { classifyRisk } from "@/services/risk";
@@ -24,6 +35,7 @@ type AtlasAction =
       user: DemoUser;
       justification?: string;
     }
+  | { type: "deleteIncident"; incidentId: string; user: DemoUser }
   | {
       type: "overrideRisk";
       incidentId: string;
@@ -32,9 +44,21 @@ type AtlasAction =
       user: DemoUser;
     }
   | { type: "addEvidence"; evidence: Evidence; user: DemoUser }
+  | { type: "updateEvidence"; evidenceId: string; patch: Partial<Evidence>; user: DemoUser }
+  | { type: "deleteEvidence"; evidenceId: string; user: DemoUser }
+  | { type: "updateActor"; actorId: string; patch: Partial<Actor>; user: DemoUser }
+  | { type: "deleteActor"; actorId: string; user: DemoUser }
+  | { type: "updateNarrative"; narrativeId: string; patch: Partial<Narrative>; user: DemoUser }
+  | { type: "deleteNarrative"; narrativeId: string; user: DemoUser }
+  | { type: "updateIndicator"; indicatorId: string; patch: Partial<Indicator>; user: DemoUser }
+  | { type: "deleteIndicator"; indicatorId: string; user: DemoUser }
   | { type: "addBlacklistEntry"; entry: BlacklistEntry; user: DemoUser }
+  | { type: "updateBlacklistEntry"; entryId: string; patch: Partial<BlacklistEntry>; user: DemoUser }
+  | { type: "deleteBlacklistEntry"; entryId: string; user: DemoUser }
   | { type: "updateBlacklistStatus"; entryId: string; status: BlacklistStatus; user: DemoUser }
-  | { type: "importIncidents"; incidents: Incident[]; report: AtlasState["imports"][number]; user: DemoUser }
+  | { type: "importIncidents"; incidents: Incident[]; report: ImportReport; user: DemoUser }
+  | { type: "updateImport"; importId: string; patch: Partial<ImportReport>; user: DemoUser }
+  | { type: "deleteImport"; importId: string; user: DemoUser }
   | { type: "ackAlert"; alertId: string; user: DemoUser };
 
 interface AtlasStoreValue extends AtlasState {
@@ -51,11 +75,24 @@ interface AtlasStoreValue extends AtlasState {
     user: DemoUser,
     justification?: string
   ) => void;
+  deleteIncident: (incidentId: string, user: DemoUser) => void;
   overrideRisk: (incidentId: string, score: number, justification: string, user: DemoUser) => void;
   addEvidence: (evidence: Evidence, user: DemoUser) => void;
+  updateEvidence: (evidenceId: string, patch: Partial<Evidence>, user: DemoUser) => void;
+  deleteEvidence: (evidenceId: string, user: DemoUser) => void;
+  updateActor: (actorId: string, patch: Partial<Actor>, user: DemoUser) => void;
+  deleteActor: (actorId: string, user: DemoUser) => void;
+  updateNarrative: (narrativeId: string, patch: Partial<Narrative>, user: DemoUser) => void;
+  deleteNarrative: (narrativeId: string, user: DemoUser) => void;
+  updateIndicator: (indicatorId: string, patch: Partial<Indicator>, user: DemoUser) => void;
+  deleteIndicator: (indicatorId: string, user: DemoUser) => void;
   addBlacklistEntry: (entry: BlacklistEntry, user: DemoUser) => void;
+  updateBlacklistEntry: (entryId: string, patch: Partial<BlacklistEntry>, user: DemoUser) => void;
+  deleteBlacklistEntry: (entryId: string, user: DemoUser) => void;
   updateBlacklistStatus: (entryId: string, status: BlacklistStatus, user: DemoUser) => void;
-  importIncidents: (incidents: Incident[], report: AtlasState["imports"][number], user: DemoUser) => void;
+  importIncidents: (incidents: Incident[], report: ImportReport, user: DemoUser) => void;
+  updateImport: (importId: string, patch: Partial<ImportReport>, user: DemoUser) => void;
+  deleteImport: (importId: string, user: DemoUser) => void;
   ackAlert: (alertId: string, user: DemoUser) => void;
   resetDemo: () => Promise<void>;
 }
@@ -136,6 +173,38 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
         ]
       };
     }
+    case "deleteIncident": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.incidents.find((incident) => incident.id === action.incidentId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        incidents: state.incidents.filter((incident) => incident.id !== action.incidentId),
+        evidences: state.evidences.filter((evidence) => evidence.incidentId !== action.incidentId),
+        alerts: state.alerts.filter((alert) => alert.incidentId !== action.incidentId),
+        actors: state.actors.map((actor) => ({
+          ...actor,
+          incidentIds: actor.incidentIds.filter((id) => id !== action.incidentId)
+        })),
+        narratives: state.narratives.map((narrative) => ({
+          ...narrative,
+          incidentIds: narrative.incidentIds.filter((id) => id !== action.incidentId)
+        })),
+        auditLogs: [
+          auditLog(
+            "incident",
+            action.incidentId,
+            "deleted",
+            action.user,
+            previous.title,
+            undefined,
+            "Report removido pelo analista."
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
     case "overrideRisk": {
       if (!canWrite(action.user)) return state;
       const previous = state.incidents.find((incident) => incident.id === action.incidentId);
@@ -197,6 +266,200 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
           ...state.auditLogs
         ]
       };
+    case "updateEvidence": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.evidences.find((evidence) => evidence.id === action.evidenceId);
+      if (!previous) return state;
+      const updated: Evidence = {
+        ...previous,
+        ...action.patch
+      };
+
+      return {
+        ...state,
+        evidences: state.evidences.map((evidence) =>
+          evidence.id === action.evidenceId ? updated : evidence
+        ),
+        auditLogs: [
+          auditLog(
+            "evidence",
+            action.evidenceId,
+            "evidence_updated",
+            action.user,
+            previous.description,
+            updated.description
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "deleteEvidence": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.evidences.find((evidence) => evidence.id === action.evidenceId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        evidences: state.evidences.filter((evidence) => evidence.id !== action.evidenceId),
+        auditLogs: [
+          auditLog(
+            "evidence",
+            action.evidenceId,
+            "evidence_deleted",
+            action.user,
+            previous.description,
+            undefined,
+            "Evidência removida pelo analista."
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "updateActor": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.actors.find((actor) => actor.id === action.actorId);
+      if (!previous) return state;
+      const updated: Actor = {
+        ...previous,
+        ...action.patch,
+        lastActivity: action.patch.lastActivity ?? previous.lastActivity
+      };
+
+      return {
+        ...state,
+        actors: state.actors.map((actor) => (actor.id === action.actorId ? updated : actor)),
+        auditLogs: [
+          auditLog("actor", action.actorId, "actor_updated", action.user, previous.name, updated.name),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "deleteActor": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.actors.find((actor) => actor.id === action.actorId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        actors: state.actors.filter((actor) => actor.id !== action.actorId),
+        incidents: state.incidents.map((incident) => ({
+          ...incident,
+          relatedActorIds: incident.relatedActorIds.filter((id) => id !== action.actorId),
+          updatedAt: incident.relatedActorIds.includes(action.actorId) ? isoNow() : incident.updatedAt
+        })),
+        auditLogs: [
+          auditLog("actor", action.actorId, "actor_deleted", action.user, previous.name, undefined),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "updateNarrative": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.narratives.find((narrative) => narrative.id === action.narrativeId);
+      if (!previous) return state;
+      const updated: Narrative = {
+        ...previous,
+        ...action.patch
+      };
+
+      return {
+        ...state,
+        narratives: state.narratives.map((narrative) =>
+          narrative.id === action.narrativeId ? updated : narrative
+        ),
+        auditLogs: [
+          auditLog(
+            "narrative",
+            action.narrativeId,
+            "narrative_updated",
+            action.user,
+            previous.name,
+            updated.name
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "deleteNarrative": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.narratives.find((narrative) => narrative.id === action.narrativeId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        narratives: state.narratives.filter((narrative) => narrative.id !== action.narrativeId),
+        incidents: state.incidents.map((incident) => ({
+          ...incident,
+          relatedNarrativeIds: incident.relatedNarrativeIds.filter((id) => id !== action.narrativeId),
+          updatedAt: incident.relatedNarrativeIds.includes(action.narrativeId) ? isoNow() : incident.updatedAt
+        })),
+        auditLogs: [
+          auditLog(
+            "narrative",
+            action.narrativeId,
+            "narrative_deleted",
+            action.user,
+            previous.name,
+            undefined
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "updateIndicator": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.indicators.find((indicator) => indicator.id === action.indicatorId);
+      if (!previous) return state;
+      const updated: Indicator = {
+        ...previous,
+        ...action.patch,
+        lastSeen: action.patch.lastSeen ?? isoNow()
+      };
+
+      return {
+        ...state,
+        indicators: state.indicators.map((indicator) =>
+          indicator.id === action.indicatorId ? updated : indicator
+        ),
+        auditLogs: [
+          auditLog(
+            "incident",
+            action.indicatorId,
+            "indicator_updated",
+            action.user,
+            previous.value,
+            updated.value
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "deleteIndicator": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.indicators.find((indicator) => indicator.id === action.indicatorId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        indicators: state.indicators.filter((indicator) => indicator.id !== action.indicatorId),
+        incidents: state.incidents.map((incident) => ({
+          ...incident,
+          indicators: incident.indicators.filter((indicator) => indicator !== previous.value),
+          updatedAt: incident.indicators.includes(previous.value) ? isoNow() : incident.updatedAt
+        })),
+        auditLogs: [
+          auditLog(
+            "incident",
+            action.indicatorId,
+            "indicator_deleted",
+            action.user,
+            previous.value,
+            undefined
+          ),
+          ...state.auditLogs
+        ]
+      };
+    }
     case "addBlacklistEntry":
       if (!canWrite(action.user)) return state;
       return {
@@ -207,6 +470,39 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
           ...state.auditLogs
         ]
       };
+    case "updateBlacklistEntry": {
+      if (!canWrite(action.user)) return state;
+      const previous = (state.blacklist ?? []).find((entry) => entry.id === action.entryId);
+      if (!previous) return state;
+      const updated: BlacklistEntry = {
+        ...previous,
+        ...action.patch,
+        updatedAt: isoNow()
+      };
+
+      return {
+        ...state,
+        blacklist: (state.blacklist ?? []).map((entry) => (entry.id === action.entryId ? updated : entry)),
+        auditLogs: [
+          auditLog("blacklist", action.entryId, "blacklist_updated", action.user, previous.value, updated.value),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "deleteBlacklistEntry": {
+      if (!canWrite(action.user)) return state;
+      const previous = (state.blacklist ?? []).find((entry) => entry.id === action.entryId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        blacklist: (state.blacklist ?? []).filter((entry) => entry.id !== action.entryId),
+        auditLogs: [
+          auditLog("blacklist", action.entryId, "blacklist_deleted", action.user, previous.value, undefined),
+          ...state.auditLogs
+        ]
+      };
+    }
     case "updateBlacklistStatus": {
       if (!canWrite(action.user)) return state;
       const previous = (state.blacklist ?? []).find((entry) => entry.id === action.entryId);
@@ -229,6 +525,38 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
             previous.status,
             action.status
           ),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "updateImport": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.imports.find((item) => item.id === action.importId);
+      if (!previous) return state;
+      const updated: ImportReport = {
+        ...previous,
+        ...action.patch
+      };
+
+      return {
+        ...state,
+        imports: state.imports.map((item) => (item.id === action.importId ? updated : item)),
+        auditLogs: [
+          auditLog("import", action.importId, "import_updated", action.user, previous.fileName, updated.fileName),
+          ...state.auditLogs
+        ]
+      };
+    }
+    case "deleteImport": {
+      if (!canWrite(action.user)) return state;
+      const previous = state.imports.find((item) => item.id === action.importId);
+      if (!previous) return state;
+
+      return {
+        ...state,
+        imports: state.imports.filter((item) => item.id !== action.importId),
+        auditLogs: [
+          auditLog("import", action.importId, "import_deleted", action.user, previous.fileName, undefined),
           ...state.auditLogs
         ]
       };
@@ -274,12 +602,18 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
 
 function normalizeState(state: AtlasState): AtlasState {
   const fallback = buildDemoState();
+  const incidents = Array.isArray(state?.incidents) ? state.incidents : [];
+  const evidences = backfillEvidenceReports(
+    Array.isArray(state?.evidences) ? state.evidences : [],
+    incidents
+  );
+
   return {
     ...fallback,
     ...(state && typeof state === "object" ? state : {}),
     monitoredEntities: Array.isArray(state?.monitoredEntities) ? state.monitoredEntities : fallback.monitoredEntities,
-    incidents: Array.isArray(state?.incidents) ? state.incidents : [],
-    evidences: Array.isArray(state?.evidences) ? state.evidences : [],
+    incidents,
+    evidences,
     actors: Array.isArray(state?.actors) ? state.actors : [],
     narratives: Array.isArray(state?.narratives) ? state.narratives : [],
     indicators: Array.isArray(state?.indicators) ? state.indicators : [],
@@ -289,6 +623,57 @@ function normalizeState(state: AtlasState): AtlasState {
     auditLogs: Array.isArray(state?.auditLogs) ? state.auditLogs : [],
     imports: Array.isArray(state?.imports) ? state.imports : []
   };
+}
+
+function backfillEvidenceReports(evidences: Evidence[], incidents: Incident[]): Evidence[] {
+  const existingIncidentIds = new Set(evidences.map((evidence) => evidence.incidentId));
+  const existingEvidenceIds = new Set(evidences.map((evidence) => evidence.id));
+  const recovered = incidents
+    .filter((incident) => isLegacyEvidenceReport(incident) && !existingIncidentIds.has(incident.id))
+    .map((incident) => evidenceFromLegacyIncident(incident))
+    .filter((evidence) => !existingEvidenceIds.has(evidence.id));
+
+  return recovered.length ? [...recovered, ...evidences] : evidences;
+}
+
+function isLegacyEvidenceReport(incident: Incident): boolean {
+  return /\bevid[êe]ncia\b/i.test(`${incident.subcategory} ${incident.analystNotes} ${(incident.keywords ?? []).join(" ")}`);
+}
+
+function evidenceFromLegacyIncident(incident: Incident): Evidence {
+  const fileName = extractMetadataValue(incident.analystNotes, "Arquivo");
+  const videoUrl = extractMetadataValue(incident.analystNotes, "Link de vídeo");
+  const evidenceKind = extractMetadataValue(incident.analystNotes, "Tipo de evidência");
+  const source = fileName || videoUrl || incident.url || incident.authorName || "Report com evidência";
+
+  return {
+    id: `ev_${incident.id}_legacy`,
+    incidentId: incident.id,
+    type: evidenceTypeFromLegacyMetadata(fileName, videoUrl, evidenceKind),
+    description: fileName ? `Arquivo anexado: ${fileName}` : videoUrl ? "Link de vídeo anexado ao report" : "Evidência registrada no report",
+    url: videoUrl || incident.url || undefined,
+    fileName: fileName || undefined,
+    collectedBy: incident.assignedTo || "Administrador",
+    collectedAt: incident.createdAt || incident.collectedAt || isoNow(),
+    source,
+    integrity: "metadados pendentes",
+    observation: incident.analystNotes,
+    confidenceLevel: incident.confidenceLevel,
+    provenanceType: incident.provenanceType
+  };
+}
+
+function extractMetadataValue(notes: string, label: string): string {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = notes.match(new RegExp(`${escapedLabel}:\\s*([^\\n.]+(?:\\.[\\w]+)?)`, "i"));
+  return match?.[1]?.trim() ?? "";
+}
+
+function evidenceTypeFromLegacyMetadata(fileName: string, videoUrl: string, evidenceKind: string): Evidence["type"] {
+  if (videoUrl || /link de v[íi]deo/i.test(evidenceKind)) return "Vídeo";
+  if (/\.(png|jpe?g|gif|webp|avif)$/i.test(fileName) || /foto|imagem|screenshot|print/i.test(evidenceKind)) return "Screenshot";
+  if (/\.(pdf|docx?|xlsx?|csv|txt)$/i.test(fileName) || /documento/i.test(evidenceKind)) return "Documento";
+  return "Arquivo";
 }
 
 function buildEmptyState(): AtlasState {
@@ -470,20 +855,59 @@ export function AtlasProvider({ children }: { children: ReactNode }) {
       updateIncident: (incidentId, patch, user, justification) => {
         if (!readOnly) dispatch({ type: "updateIncident", incidentId, patch, user, justification });
       },
+      deleteIncident: (incidentId, user) => {
+        if (!readOnly) dispatch({ type: "deleteIncident", incidentId, user });
+      },
       overrideRisk: (incidentId, score, justification, user) => {
         if (!readOnly) dispatch({ type: "overrideRisk", incidentId, score, justification, user });
       },
       addEvidence: (evidence, user) => {
         if (!readOnly) dispatch({ type: "addEvidence", evidence, user });
       },
+      updateEvidence: (evidenceId, patch, user) => {
+        if (!readOnly) dispatch({ type: "updateEvidence", evidenceId, patch, user });
+      },
+      deleteEvidence: (evidenceId, user) => {
+        if (!readOnly) dispatch({ type: "deleteEvidence", evidenceId, user });
+      },
+      updateActor: (actorId, patch, user) => {
+        if (!readOnly) dispatch({ type: "updateActor", actorId, patch, user });
+      },
+      deleteActor: (actorId, user) => {
+        if (!readOnly) dispatch({ type: "deleteActor", actorId, user });
+      },
+      updateNarrative: (narrativeId, patch, user) => {
+        if (!readOnly) dispatch({ type: "updateNarrative", narrativeId, patch, user });
+      },
+      deleteNarrative: (narrativeId, user) => {
+        if (!readOnly) dispatch({ type: "deleteNarrative", narrativeId, user });
+      },
+      updateIndicator: (indicatorId, patch, user) => {
+        if (!readOnly) dispatch({ type: "updateIndicator", indicatorId, patch, user });
+      },
+      deleteIndicator: (indicatorId, user) => {
+        if (!readOnly) dispatch({ type: "deleteIndicator", indicatorId, user });
+      },
       addBlacklistEntry: (entry, user) => {
         if (!readOnly) dispatch({ type: "addBlacklistEntry", entry, user });
+      },
+      updateBlacklistEntry: (entryId, patch, user) => {
+        if (!readOnly) dispatch({ type: "updateBlacklistEntry", entryId, patch, user });
+      },
+      deleteBlacklistEntry: (entryId, user) => {
+        if (!readOnly) dispatch({ type: "deleteBlacklistEntry", entryId, user });
       },
       updateBlacklistStatus: (entryId, status, user) => {
         if (!readOnly) dispatch({ type: "updateBlacklistStatus", entryId, status, user });
       },
       importIncidents: (incidents, report, user) => {
         if (!readOnly) dispatch({ type: "importIncidents", incidents, report, user });
+      },
+      updateImport: (importId, patch, user) => {
+        if (!readOnly) dispatch({ type: "updateImport", importId, patch, user });
+      },
+      deleteImport: (importId, user) => {
+        if (!readOnly) dispatch({ type: "deleteImport", importId, user });
       },
       ackAlert: (alertId, user) => {
         if (!readOnly) dispatch({ type: "ackAlert", alertId, user });

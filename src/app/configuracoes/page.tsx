@@ -8,12 +8,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ItemActions } from "@/components/ui/item-actions";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canManageUsers, canWrite, type AccessRole } from "@/features/auth/auth";
 import { useAtlas } from "@/features/state/atlas-store";
 import { useAuth } from "@/features/state/auth-store";
+
+interface UserDraft {
+  name: string;
+  role: AccessRole;
+  team: string;
+}
 
 const roles: AccessRole[] = ["Super Admin", "Admin", "Viewer"];
 
@@ -25,12 +32,14 @@ const roleDescriptions: Record<AccessRole, string> = {
 
 export default function SettingsPage() {
   const atlas = useAtlas();
-  const { user, users, addUser } = useAuth();
+  const { user, users, addUser, updateUserProfile, deleteUserProfile } = useAuth();
   const mayWrite = canWrite(user);
   const mayManageUsers = canManageUsers(user);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<AccessRole>("Viewer");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<UserDraft>({ name: "", role: "Viewer", team: "" });
   const [message, setMessage] = useState("");
 
   async function onAddUser(event: FormEvent<HTMLFormElement>) {
@@ -50,6 +59,41 @@ export default function SettingsPage() {
     setPassword("");
     setRole("Viewer");
     setMessage("Usuário cadastrado.");
+  }
+
+  function startEdit(account: (typeof users)[number]) {
+    setEditingId(account.id);
+    setDraft({
+      name: account.name,
+      role: account.role,
+      team: account.team
+    });
+    setMessage("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft({ name: "", role: "Viewer", team: "" });
+  }
+
+  async function saveUser(id: string) {
+    if (!mayManageUsers) return;
+    const ok = await updateUserProfile(id, {
+      name: draft.name.trim() || "Usuário",
+      role: draft.role,
+      team: draft.team.trim() || (draft.role === "Viewer" ? "Visualização" : "Operação")
+    });
+    setMessage(ok ? "Usuário atualizado." : "Não foi possível atualizar esse usuário.");
+    if (ok) cancelEdit();
+  }
+
+  async function removeUser(account: (typeof users)[number]) {
+    if (!mayManageUsers || account.id === user?.id) return;
+    const confirmed = window.confirm(`Excluir o acesso de "${account.email}"?`);
+    if (!confirmed) return;
+    const ok = await deleteUserProfile(account.id);
+    setMessage(ok ? "Usuário removido." : "Não foi possível remover esse usuário.");
+    if (ok && editingId === account.id) cancelEdit();
   }
 
   return (
@@ -156,26 +200,79 @@ export default function SettingsPage() {
                     <TableHead>Nível</TableHead>
                     <TableHead>Equipe</TableHead>
                     <TableHead>Permissão</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((account) => (
-                    <TableRow key={account.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-atlas-text">{account.email}</p>
-                          <p className="text-xs text-atlas-muted">{account.name}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={account.role === "Viewer" ? "muted" : "success"}>{account.role}</Badge>
-                      </TableCell>
-                      <TableCell>{account.team}</TableCell>
-                      <TableCell className="text-sm text-atlas-muted">
-                        {account.role === "Viewer" ? "Somente visualiza" : "Visualiza e adiciona dados"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {users.map((account) => {
+                    const isEditing = editingId === account.id;
+
+                    return (
+                      <TableRow key={account.id}>
+                        <TableCell>
+                          <div className="min-w-52">
+                            <p className="font-medium text-atlas-text">{account.email}</p>
+                            {isEditing ? (
+                              <Input
+                                value={draft.name}
+                                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                                aria-label="Nome do usuário"
+                                className="mt-2"
+                              />
+                            ) : (
+                              <p className="text-xs text-atlas-muted">{account.name}</p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Select
+                              value={draft.role}
+                              onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value as AccessRole }))}
+                              className="min-w-36"
+                            >
+                              {roles.map((option) => (
+                                <option key={option}>{option}</option>
+                              ))}
+                            </Select>
+                          ) : (
+                            <Badge variant={account.role === "Viewer" ? "muted" : "success"}>{account.role}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <Input
+                              value={draft.team}
+                              onChange={(event) => setDraft((current) => ({ ...current, team: event.target.value }))}
+                              aria-label="Equipe do usuário"
+                              className="min-w-40"
+                            />
+                          ) : (
+                            account.team
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-atlas-muted">
+                          {(isEditing ? draft.role : account.role) === "Viewer" ? "Somente visualiza" : "Visualiza e adiciona dados"}
+                        </TableCell>
+                        <TableCell>
+                          {mayManageUsers ? (
+                            <ItemActions
+                              isEditing={isEditing}
+                              onEdit={() => startEdit(account)}
+                              onSave={() => void saveUser(account.id)}
+                              onCancel={cancelEdit}
+                              onDelete={() => void removeUser(account)}
+                              deleteDisabled={account.id === user?.id}
+                              editLabel="Editar usuário"
+                              deleteLabel="Excluir usuário"
+                            />
+                          ) : (
+                            <span className="text-xs text-atlas-muted">Somente leitura</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

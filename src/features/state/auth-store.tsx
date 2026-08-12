@@ -18,6 +18,8 @@ interface AuthStoreValue {
   logout: () => Promise<void>;
   users: DemoUser[];
   addUser: (input: { email: string; password: string; role: AccessRole }) => Promise<boolean>;
+  updateUserProfile: (id: string, patch: Partial<Pick<DemoUser, "name" | "role" | "team">>) => Promise<boolean>;
+  deleteUserProfile: (id: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthStoreValue | null>(null);
@@ -136,6 +138,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUsers((current) => [created, ...current]);
         return true;
+      },
+      async updateUserProfile(id, patch) {
+        if (!user || !canManageCurrentUser(user)) return false;
+        const supabase = createBrowserSupabaseClient();
+        if (!supabase) return false;
+        const nextPatch = {
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.role !== undefined ? { role: patch.role } : {}),
+          ...(patch.team !== undefined ? { team: patch.team } : {})
+        };
+        const { error } = await supabase.from("users").update(nextPatch).eq("auth_user_id", id);
+        if (error) {
+          setError(error.message);
+          return false;
+        }
+        setUsers((current) =>
+          current.map((storedUser) => (storedUser.id === id ? { ...storedUser, ...patch } : storedUser))
+        );
+        if (user.id === id) {
+          setUser((current) => (current ? { ...current, ...patch } : current));
+        }
+        return true;
+      },
+      async deleteUserProfile(id) {
+        if (!user || !canManageCurrentUser(user) || user.id === id) return false;
+        const supabase = createBrowserSupabaseClient();
+        if (!supabase) return false;
+        const { error } = await supabase.from("users").delete().eq("auth_user_id", id);
+        if (error) {
+          setError(error.message);
+          return false;
+        }
+        setUsers((current) => current.filter((storedUser) => storedUser.id !== id));
+        return true;
       }
     }),
     [error, loading, user, users]
@@ -243,4 +279,8 @@ async function loadUserProfile(authUserId: string): Promise<DemoUser | null> {
 function safeText(value: unknown, fallback: string): string {
   const text = typeof value === "string" ? value.trim() : "";
   return text || fallback;
+}
+
+function canManageCurrentUser(user: DemoUser): boolean {
+  return user.role === "Admin" || user.role === "Super Admin";
 }
