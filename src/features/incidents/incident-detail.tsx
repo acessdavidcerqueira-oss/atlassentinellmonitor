@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { AlertTriangle, CheckCircle2, FilePlus, Link2, Save, ShieldAlert } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FilePlus, Link2, Save, ShieldAlert, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -39,8 +39,13 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
     type: "URL" as EvidenceType,
     description: "",
     url: "",
-    source: ""
+    source: "",
+    fileName: "",
+    fileType: "",
+    fileSize: 0
   });
+  const evidenceFileInputRef = useRef<HTMLInputElement>(null);
+  const [evidenceError, setEvidenceError] = useState("");
 
   const evidences = useMemo(
     () => atlas.evidences.filter((item) => item.incidentId === incident?.id),
@@ -72,23 +77,58 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
   }
 
   function addEvidence() {
-    if (!user || !mayWrite || !evidence.description || !evidence.source) return;
+    if (!user || !mayWrite) return;
+    const description = evidence.description.trim() || (evidence.fileName ? `Arquivo anexado: ${evidence.fileName}` : "");
+    const source = evidence.source.trim() || evidence.fileName || evidence.url.trim();
+    const hasEvidenceContent = Boolean(description || evidence.url.trim() || evidence.fileName);
+
+    if (!hasEvidenceContent) {
+      setEvidenceError("Selecione um arquivo, print ou informe uma URL antes de adicionar.");
+      return;
+    }
+
     const newEvidence: Evidence = {
       id: createId("ev"),
       incidentId: currentIncident.id,
       type: evidence.type,
-      description: evidence.description,
-      url: evidence.url,
+      description: description || "Evidência adicionada",
+      url: evidence.url.trim() || undefined,
+      fileName: evidence.fileName || undefined,
       collectedBy: user.name,
       collectedAt: isoNow(),
-      source: evidence.source,
+      source: source || "Inserção manual",
       integrity: "metadados pendentes",
-      observation: "",
+      observation: evidence.fileName
+        ? `Arquivo selecionado: ${evidence.fileName}${evidence.fileType ? ` (${evidence.fileType})` : ""}${
+            evidence.fileSize ? ` - ${formatFileSize(evidence.fileSize)}` : ""
+          }`
+        : "",
       confidenceLevel: "medium",
       provenanceType: currentIncident.provenanceType
     };
     atlas.addEvidence(newEvidence, user);
-    setEvidence({ type: "URL", description: "", url: "", source: "" });
+    setEvidence({ type: "URL", description: "", url: "", source: "", fileName: "", fileType: "", fileSize: 0 });
+    setEvidenceError("");
+    if (evidenceFileInputRef.current) evidenceFileInputRef.current.value = "";
+  }
+
+  function attachEvidenceFile(file: File | undefined) {
+    if (!file) return;
+    setEvidence((current) => ({
+      ...current,
+      type: inferEvidenceType(file),
+      description: current.description.trim() || `Arquivo anexado: ${file.name}`,
+      source: current.source.trim() || file.name,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size
+    }));
+    setEvidenceError("");
+  }
+
+  function clearEvidenceFile() {
+    setEvidence((current) => ({ ...current, fileName: "", fileType: "", fileSize: 0 }));
+    if (evidenceFileInputRef.current) evidenceFileInputRef.current.value = "";
   }
 
   function relateActor() {
@@ -213,6 +253,7 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
                     </div>
                     <p className="mt-2 font-medium text-atlas-text">{item.description}</p>
                     <p className="mt-1 text-sm text-atlas-muted">{item.url || item.source}</p>
+                    {item.fileName ? <p className="mt-1 text-sm text-atlas-muted">Arquivo: {item.fileName}</p> : null}
                     <p className="mt-1 text-xs text-atlas-muted">Integridade: {item.integrity}</p>
                   </div>
                 ))
@@ -248,12 +289,45 @@ export function IncidentDetail({ incidentId }: { incidentId?: string }) {
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Arquivo ou URL</Label>
+                    <Label>Arquivo, print ou documento</Label>
+                    <Input
+                      ref={evidenceFileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json"
+                      onChange={(event) => attachEvidenceFile(event.target.files?.[0])}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="secondary" onClick={() => evidenceFileInputRef.current?.click()}>
+                        <Upload className="h-4 w-4" />
+                        Selecionar arquivo
+                      </Button>
+                      {evidence.fileName ? (
+                        <Button type="button" variant="ghost" onClick={clearEvidenceFile}>
+                          <X className="h-4 w-4" />
+                          Remover
+                        </Button>
+                      ) : null}
+                    </div>
+                    {evidence.fileName ? (
+                      <div className="rounded-md border border-atlas-border bg-[#071126]/70 p-3 text-sm text-atlas-muted">
+                        <p className="font-medium text-atlas-text">{evidence.fileName}</p>
+                        <p>
+                          {evidence.fileType || "Tipo não informado"}
+                          {evidence.fileSize ? ` · ${formatFileSize(evidence.fileSize)}` : ""}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>URL ou link de vídeo</Label>
                     <Input
                       value={evidence.url}
+                      placeholder="https://..."
                       onChange={(event) => setEvidence({ ...evidence, url: event.target.value })}
                     />
                   </div>
+                  {evidenceError ? <p className="text-sm text-red-300 md:col-span-2">{evidenceError}</p> : null}
                   <Button type="button" onClick={addEvidence}>
                     <FilePlus className="h-4 w-4" />
                     Adicionar evidência
@@ -476,4 +550,27 @@ function Factor({ label, value }: { label: string; value: number }) {
 
 function formatReach(value: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(value);
+}
+
+function inferEvidenceType(file: File): EvidenceType {
+  if (file.type.startsWith("image/")) return "Screenshot";
+  if (file.type.startsWith("video/")) return "Vídeo";
+  if (file.type.startsWith("audio/")) return "Áudio";
+  if (
+    file.type.includes("pdf") ||
+    file.type.includes("document") ||
+    file.type.includes("spreadsheet") ||
+    /\.(pdf|docx?|xlsx?|csv|txt)$/i.test(file.name)
+  ) {
+    return "Documento";
+  }
+  return "Arquivo";
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: value >= 10 ? 0 : 1 }).format(value)} ${units[index]}`;
 }
