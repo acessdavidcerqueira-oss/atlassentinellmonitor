@@ -20,6 +20,7 @@ import { evaluateIncidentAlerts } from "@/services/alerts";
 import { classifyRisk } from "@/services/risk";
 import { createId } from "@/utils/id";
 import { isoNow } from "@/utils/date";
+import { toDomain } from "@/utils/text";
 import { canWrite, type DemoUser } from "@/features/auth/auth";
 import { useAuth } from "@/features/state/auth-store";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -134,12 +135,15 @@ function reducer(state: AtlasState, action: AtlasAction): AtlasState {
     case "addIncident": {
       if (!canWrite(action.user)) return state;
       const alerts = evaluateIncidentAlerts(action.incident);
+      const derived = deriveEntitiesFromIncident(action.incident, state);
       return {
         ...state,
-        incidents: [action.incident, ...state.incidents],
+        incidents: [derived.incident, ...state.incidents],
+        actors: derived.actors,
+        narratives: derived.narratives,
         alerts: [...alerts, ...state.alerts],
         auditLogs: [
-          auditLog("incident", action.incident.id, "created", action.user, undefined, action.incident.title),
+          auditLog("incident", derived.incident.id, "created", action.user, undefined, derived.incident.title),
           ...state.auditLogs
         ]
       };
@@ -607,15 +611,20 @@ function normalizeState(state: AtlasState): AtlasState {
     Array.isArray(state?.evidences) ? state.evidences : [],
     incidents
   );
+  const recovered = backfillActorAndNarrativeReports(
+    incidents,
+    Array.isArray(state?.actors) ? state.actors : [],
+    Array.isArray(state?.narratives) ? state.narratives : []
+  );
 
   return {
     ...fallback,
     ...(state && typeof state === "object" ? state : {}),
     monitoredEntities: Array.isArray(state?.monitoredEntities) ? state.monitoredEntities : fallback.monitoredEntities,
-    incidents,
+    incidents: recovered.incidents,
     evidences,
-    actors: Array.isArray(state?.actors) ? state.actors : [],
-    narratives: Array.isArray(state?.narratives) ? state.narratives : [],
+    actors: recovered.actors,
+    narratives: recovered.narratives,
     indicators: Array.isArray(state?.indicators) ? state.indicators : [],
     alerts: Array.isArray(state?.alerts) ? state.alerts : [],
     tasks: Array.isArray(state?.tasks) ? state.tasks : [],
@@ -623,6 +632,220 @@ function normalizeState(state: AtlasState): AtlasState {
     auditLogs: Array.isArray(state?.auditLogs) ? state.auditLogs : [],
     imports: Array.isArray(state?.imports) ? state.imports : []
   };
+}
+
+function deriveEntitiesFromIncident(
+  incident: Incident,
+  state: Pick<AtlasState, "actors" | "narratives">
+): { incident: Incident; actors: Actor[]; narratives: Narrative[] } {
+  let nextIncident = incident;
+  let actors = state.actors;
+  let narratives = state.narratives;
+
+  if (isActorReport(incident)) {
+    const derived = upsertActorForIncident(nextIncident, actors);
+    actors = derived.actors;
+    nextIncident = {
+      ...nextIncident,
+      relatedActorIds: uniqueValues([...nextIncident.relatedActorIds, derived.actorId])
+    };
+  }
+
+  if (isNarrativeReport(incident)) {
+    const derived = upsertNarrativeForIncident(nextIncident, narratives);
+    narratives = derived.narratives;
+    nextIncident = {
+      ...nextIncident,
+      relatedNarrativeIds: uniqueValues([...nextIncident.relatedNarrativeIds, derived.narrativeId])
+    };
+  }
+
+  return { incident: nextIncident, actors, narratives };
+}
+
+function backfillActorAndNarrativeReports(
+  incidents: Incident[],
+  initialActors: Actor[],
+  initialNarratives: Narrative[]
+): { incidents: Incident[]; actors: Actor[]; narratives: Narrative[] } {
+  let actors = initialActors;
+  let narratives = initialNarratives;
+
+  const nextIncidents = incidents.map((incident) => {
+    const derived = deriveEntitiesFromIncident(incident, { actors, narratives });
+    actors = derived.actors;
+    narratives = derived.narratives;
+    return derived.incident;
+  });
+
+  return { incidents: nextIncidents, actors, narratives };
+}
+
+function upsertActorForIncident(incident: Incident, actors: Actor[]): { actors: Actor[]; actorId: string } {
+  const key = actorIdentityKey(incident);
+  const existing = actors.find((actor) => actorIdentityKeyFromActor(actor) === key);
+  const lastActivity = incident.updatedAt || incident.createdAt || isoNow();
+  const followers = incident.reachType === "estimated" ? incident.reachValue : undefined;
+
+  if (existing) {
+    const incidentIds = uniqueValues([...existing.incidentIds, incident.id]);
+    return {
+      actorId: existing.id,
+      actors: actors.map((actor) =>
+        actor.id === existing.id
+          ? {
+              ...actor,
+              name: actor.name || incident.authorName,
+              handle: actor.handle || incident.authorHandle,
+              url: actor.url || incident.authorUrl || incident.url,
+              platform: actor.platform || incident.platform || "Não informado",
+              type: actor.type === "Origem indeterminada" ? incident.actorType : actor.type,
+              followers: actor.followers ?? followers,
+              occurrenceCount: incidentIds.length,
+              recurrence: recurrenceFromCount(incidentIds.length),
+              riskScore: Math.max(actor.riskScore, incident.riskScore),
+              confidenceLevel: strongerConfidence(actor.confidenceLevel, incident.confidenceLevel),
+              lastActivity: laterDate(actor.lastActivity, lastActivity),
+              observations: actor.observations || incident.analystNotes,
+              incidentIds
+            }
+          : actor
+      )
+    };
+  }
+
+  const actor: Actor = {
+    id: createId("actor"),
+    name: incident.authorName || incident.domain || incident.title.replace(/^Report:\s*/i, ""),
+    handle: incident.authorHandle || "",
+    url: incident.authorUrl || incident.url,
+    platform: incident.platform || "Não informado",
+    type: incident.actorType,
+    description: incident.summary || incident.content || "Ator ou página registrado por report rápido.",
+    followers,
+    followersProvenance: followers ? "ESTIMATIVA_ATLAS" : "NAO_DISPONIVEL",
+    occurrenceCount: 1,
+    recurrence: "baixa",
+    riskScore: incident.riskScore,
+    confidenceLevel: incident.confidenceLevel,
+    lastActivity,
+    observations: incident.analystNotes,
+    evidenceIds: [],
+    incidentIds: [incident.id],
+    narrativeIds: incident.relatedNarrativeIds
+  };
+
+  return { actorId: actor.id, actors: [actor, ...actors] };
+}
+
+function upsertNarrativeForIncident(
+  incident: Incident,
+  narratives: Narrative[]
+): { narratives: Narrative[]; narrativeId: string } {
+  const key = narrativeIdentityKey(incident);
+  const existing = narratives.find((narrative) => normalizeKey(narrative.name) === key);
+  const source = incident.domain || toDomain(incident.url) || incident.platform || "Fonte não informada";
+
+  if (existing) {
+    return {
+      narrativeId: existing.id,
+      narratives: narratives.map((narrative) => {
+        if (narrative.id !== existing.id) return narrative;
+        const incidentIds = uniqueValues([...narrative.incidentIds, incident.id]);
+        return {
+          ...narrative,
+          description: narrative.description || incident.summary,
+          centralMessage: narrative.centralMessage || incident.summary,
+          volume: Math.max(narrative.volume, incidentIds.length),
+          growth: Math.max(narrative.growth, incidentIds.length > 1 ? 25 : 10),
+          velocity: Math.max(narrative.velocity, incident.velocityScore),
+          platforms: uniqueValues([...narrative.platforms, incident.platform].filter(Boolean)),
+          topSources: uniqueValues([...narrative.topSources, source].filter(Boolean)),
+          incidentIds,
+          riskScore: Math.max(narrative.riskScore, incident.riskScore),
+          confidenceLevel: strongerConfidence(narrative.confidenceLevel, incident.confidenceLevel),
+          recommendation: narrative.recommendation || incident.recommendedAction,
+          status: narrative.status === "mitigada" ? narrative.status : incidentIds.length > 1 ? "em crescimento" : "em observação"
+        };
+      })
+    };
+  }
+
+  const narrative: Narrative = {
+    id: createId("nar"),
+    name: narrativeNameFromIncident(incident),
+    description: incident.summary,
+    centralMessage: incident.summary,
+    polarity: incident.sentiment === "positivo" ? "positiva" : incident.sentiment === "neutro" ? "neutra" : incident.sentiment === "misto" ? "mista" : "negativa",
+    volume: 1,
+    growth: 10,
+    velocity: incident.velocityScore,
+    platforms: [incident.platform].filter(Boolean),
+    topSources: [source].filter(Boolean),
+    topAmplifiers: [incident.authorName].filter(Boolean),
+    incidentIds: [incident.id],
+    probableOrigin: "Não inferido",
+    riskScore: incident.riskScore,
+    confidenceLevel: incident.confidenceLevel,
+    reachedAudiences: [],
+    recommendation: incident.recommendedAction,
+    status: "em observação",
+    provenanceType: incident.provenanceType
+  };
+
+  return { narrativeId: narrative.id, narratives: [narrative, ...narratives] };
+}
+
+function isActorReport(incident: Incident): boolean {
+  return (
+    incident.keywords.includes("atores") ||
+    incident.keywords.includes("influenciador") ||
+    incident.keywords.includes("pessoa exposta") ||
+    (incident.ownerTeam === "Atlas OSINT" && ["Influenciador", "Pessoa exposta"].includes(incident.actorType))
+  );
+}
+
+function isNarrativeReport(incident: Incident): boolean {
+  return incident.ownerTeam === "Comunicação" || incident.keywords.includes("narrativas") || incident.category === "Narrativa negativa";
+}
+
+function actorIdentityKey(incident: Incident): string {
+  return normalizeKey(incident.authorUrl || incident.url || incident.authorName || incident.domain || incident.title);
+}
+
+function actorIdentityKeyFromActor(actor: Actor): string {
+  return normalizeKey(actor.url || actor.handle || actor.name);
+}
+
+function narrativeIdentityKey(incident: Incident): string {
+  return normalizeKey(narrativeNameFromIncident(incident));
+}
+
+function narrativeNameFromIncident(incident: Incident): string {
+  return incident.authorName || incident.domain || incident.title.replace(/^Report:\s*/i, "") || "Narrativa registrada";
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function recurrenceFromCount(count: number): Actor["recurrence"] {
+  if (count >= 5) return "alta";
+  if (count >= 2) return "moderada";
+  return "baixa";
+}
+
+function strongerConfidence(current: Actor["confidenceLevel"], incoming: Actor["confidenceLevel"]): Actor["confidenceLevel"] {
+  const order: Record<Actor["confidenceLevel"], number> = { low: 1, medium: 2, high: 3 };
+  return order[incoming] > order[current] ? incoming : current;
+}
+
+function laterDate(current: string, incoming: string): string {
+  return new Date(incoming).getTime() > new Date(current).getTime() ? incoming : current;
 }
 
 function backfillEvidenceReports(evidences: Evidence[], incidents: Incident[]): Evidence[] {

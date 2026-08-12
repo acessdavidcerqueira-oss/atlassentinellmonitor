@@ -25,8 +25,6 @@ import { Button } from "@/components/ui/button";
 import { ItemActions } from "@/components/ui/item-actions";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
 import { RiskBadge } from "@/components/ui/risk-badge";
-import { ReportActionButton } from "@/components/layout/report-action-button";
-import { getReportThemeStyle, reportThemeCssVars } from "@/components/layout/report-theme-style";
 import {
   LightweightAreaChart,
   LightweightBarList,
@@ -40,7 +38,6 @@ import {
   type DashboardEvidence,
   type DashboardPeriod
 } from "@/services/dashboard-analytics";
-import { reportThemeDefinitions, type ReportTheme } from "@/services/simple-report";
 import { canWrite } from "@/features/auth/auth";
 import { formatDateTime } from "@/utils/date";
 import { useAuth } from "@/features/state/auth-store";
@@ -51,17 +48,6 @@ const periods: Array<{ value: DashboardPeriod; label: string }> = [
   { value: "24h", label: "24h" },
   { value: "7d", label: "7 dias" },
   { value: "30d", label: "30 dias" }
-];
-const dashboardReportThemes: ReportTheme[] = [
-  "geral",
-  "desinformacao",
-  "fraudes",
-  "cti",
-  "ameacas",
-  "atores",
-  "coordenacao",
-  "narrativas",
-  "evidencias"
 ];
 
 export function CommandCenter() {
@@ -126,46 +112,101 @@ export function CommandCenter() {
         ))}
       </section>
 
-      {!state.readOnly ? (
-        <Card>
-          <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>Iniciar report</CardTitle>
-              <p className="mt-1 text-sm text-atlas-muted">
-                A Dash geral concentra todos os atalhos. Cada aba também tem seu botão já no tema certo.
-              </p>
-            </div>
-            <ReportActionButton theme="geral" label="Novo report geral" />
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-            {dashboardReportThemes.map((theme) => {
-              const config = reportThemeDefinitions[theme];
-              const themeStyle = getReportThemeStyle(theme);
-              const Icon = themeStyle.icon;
-              return (
-                <div
-                  key={theme}
-                  style={reportThemeCssVars(theme)}
-                  className="rounded-md border border-[color:var(--report-border)] bg-[color:var(--report-bg)] p-3 transition hover:bg-[color:var(--report-hover)]"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--report-border)] bg-black/10 text-[color:var(--report-accent)]">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-atlas-text">{config.shortLabel}</p>
-                      <p className="mt-1 min-h-10 text-xs leading-5 text-atlas-muted">{config.description}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3">
-                    <ReportActionButton theme={theme} label="Iniciar" />
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ) : null}
+      <section className="grid gap-4 xl:grid-cols-4">
+        <SectionInsightCard
+          title="Desinformação"
+          icon={Bot}
+          value={kpis.disinformation}
+          data={analytics.categoryDistribution.filter((item) =>
+            ["Desinformação", "Conteúdo enganoso", "Conteúdo fora de contexto", "Conteúdo manipulado", "Deepfake", "Narrativa negativa"].includes(item.name)
+          )}
+          items={analytics.incidents.filter((incident) => ["Desinformação", "Conteúdo enganoso", "Conteúdo fora de contexto", "Conteúdo manipulado", "Deepfake", "Narrativa negativa"].includes(incident.category)).slice(0, 3)}
+          basePath={state.viewBasePath}
+        />
+        <SectionInsightCard
+          title="Fraudes"
+          icon={ShieldAlert}
+          value={kpis.fraud}
+          data={analytics.categoryDistribution.filter((item) =>
+            ["Perfil falso", "Impersonação", "Fraude", "Golpe financeiro"].includes(item.name)
+          )}
+          items={analytics.incidents.filter((incident) => ["Perfil falso", "Impersonação", "Fraude", "Golpe financeiro"].includes(incident.category)).slice(0, 3)}
+          basePath={state.viewBasePath}
+        />
+        <SectionInsightCard
+          title="Cyber"
+          icon={Binary}
+          value={kpis.cyber}
+          data={analytics.categoryDistribution.filter((item) =>
+            ["Phishing", "Domínio fraudulento", "Malware", "Vazamento de credencial", "Ataque contra conta", "Ataque contra site", "Incidente cibernético", "Exposição de dados"].includes(item.name)
+          )}
+          items={analytics.incidents.filter((incident) => ["Phishing", "Domínio fraudulento", "Malware", "Vazamento de credencial", "Ataque contra conta", "Ataque contra site", "Incidente cibernético", "Exposição de dados"].includes(incident.category)).slice(0, 3)}
+          basePath={state.viewBasePath}
+        />
+        <SectionInsightCard
+          title="Ameaças"
+          icon={AlertCircle}
+          value={kpis.peopleThreats}
+          data={analytics.categoryDistribution.filter((item) =>
+            ["Exposição de agenda", "Exposição de localização", "Assédio", "Ameaça física", "Incitação à violência"].includes(item.name)
+          )}
+          items={analytics.incidents.filter((incident) => ["Exposição de agenda", "Exposição de localização", "Assédio", "Ameaça física", "Incitação à violência"].includes(incident.category) || incident.threatLevel >= 2).slice(0, 3)}
+          basePath={state.viewBasePath}
+        />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-4">
+        <SectionInsightCard
+          title="Atores e páginas"
+          icon={Users}
+          value={kpis.actors}
+          data={analytics.topActors.map((actor) => ({ name: actor.name, value: actor.reports, percent: 0 }))}
+          summaryItems={analytics.topActors.map((actor) => ({
+            id: actor.id,
+            title: actor.name,
+            subtitle: `${actor.platform} · ${actor.role}`,
+            value: actor.reports,
+            href: `${state.viewBasePath}/atores`
+          }))}
+        />
+        <SectionInsightCard
+          title="Narrativas"
+          icon={Activity}
+          value={kpis.narratives}
+          data={analytics.topNarratives.map((narrative) => ({ name: narrative.name, value: narrative.volume, percent: 0 }))}
+          summaryItems={analytics.topNarratives.map((narrative) => ({
+            id: narrative.id,
+            title: narrative.name,
+            subtitle: `${narrative.sentiment} · ${narrative.status}`,
+            value: narrative.volume,
+            href: `${state.viewBasePath}/narrativas`
+          }))}
+        />
+        <SectionInsightCard
+          title="Evidências"
+          icon={Database}
+          value={kpis.evidences}
+          data={analytics.recentEvidences.map((evidence) => ({ name: evidence.type, value: 1, percent: 0 }))}
+          summaryItems={analytics.recentEvidences.map((evidence) => ({
+            id: evidence.id,
+            title: evidence.incidentTitle,
+            subtitle: `${evidence.type} · ${evidence.source}`,
+            href: `${state.viewBasePath}/incidents/${evidence.incidentId}`
+          }))}
+        />
+        <SectionInsightCard
+          title="Blacklist"
+          icon={ShieldAlert}
+          value={kpis.blacklist}
+          data={analytics.blacklist.slice(0, 6).map((entry) => ({ name: entry.kind, value: 1, percent: 0 }))}
+          summaryItems={analytics.blacklist.slice(0, 3).map((entry) => ({
+            id: entry.id,
+            title: entry.value,
+            subtitle: `${entry.kind} · ${entry.status}`,
+            href: `${state.viewBasePath}/blacklist`
+          }))}
+        />
+      </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
         <Card>
@@ -344,6 +385,82 @@ function ChartCard({ title, data, color = "#48CFF2" }: { title: string; data: Co
         ) : (
           <EmptyChart />
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SectionInsightCard({
+  title,
+  icon: Icon,
+  value,
+  data,
+  items,
+  summaryItems,
+  basePath = ""
+}: {
+  title: string;
+  icon: typeof Gauge;
+  value: number;
+  data: CountEntry[];
+  items?: Array<{ id: string; title: string; category: string; riskScore: number; riskLevel: RiskLevel; updatedAt: string }>;
+  summaryItems?: Array<{ id: string; title: string; subtitle: string; value?: number; href: string }>;
+  basePath?: string;
+}) {
+  const normalizedData = compactCounts(data);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle>{title}</CardTitle>
+          <Icon className="h-5 w-5 text-atlas-action" />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase text-atlas-muted">Registros no período</p>
+            <p className="mt-1 font-display text-3xl font-semibold text-atlas-text">{value}</p>
+          </div>
+          <Badge variant="muted">{normalizedData.length ? `${normalizedData.length} grupos` : "sem volume"}</Badge>
+        </div>
+        <div className="h-28">
+          {normalizedData.length ? <LightweightBarList data={normalizedData} /> : <EmptyChart />}
+        </div>
+        <div className="space-y-2">
+          {items?.length
+            ? items.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`${basePath}/incidents/${item.id}`}
+                  className="block rounded-md border border-atlas-border bg-white/5 p-2 transition hover:bg-white/8"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-atlas-text">{item.title}</p>
+                      <p className="mt-1 text-xs text-atlas-muted">{item.category} · {formatDateTime(item.updatedAt)}</p>
+                    </div>
+                    <RiskBadge level={item.riskLevel} score={item.riskScore} />
+                  </div>
+                </Link>
+              ))
+            : summaryItems?.length
+              ? summaryItems.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    className="flex items-center justify-between gap-3 rounded-md border border-atlas-border bg-white/5 p-2 text-sm transition hover:bg-white/8"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-atlas-text">{item.title}</span>
+                      <span className="mt-1 block truncate text-xs text-atlas-muted">{item.subtitle}</span>
+                    </span>
+                    {item.value !== undefined ? <span className="font-display text-lg text-atlas-text">{item.value}</span> : null}
+                  </Link>
+                ))
+              : <EmptyState>Nenhum item registrado nesta seção.</EmptyState>}
+        </div>
       </CardContent>
     </Card>
   );
@@ -687,4 +804,21 @@ function riskLevelFromScore(score: number): RiskLevel {
   if (score <= 60) return "Moderado";
   if (score <= 80) return "Alto";
   return "Crítico";
+}
+
+function compactCounts(data: CountEntry[]): CountEntry[] {
+  const totals = new Map<string, number>();
+  data.forEach((item) => {
+    if (!item.name) return;
+    totals.set(item.name, (totals.get(item.name) ?? 0) + item.value);
+  });
+  const total = Array.from(totals.values()).reduce((sum, value) => sum + value, 0);
+  return Array.from(totals.entries())
+    .map(([name, value]) => ({
+      name,
+      value,
+      percent: total ? Math.round((value / total) * 100) : 0
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 4);
 }
